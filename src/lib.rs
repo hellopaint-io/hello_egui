@@ -18,6 +18,8 @@ pub use egui_infinite_scroll as infinite_scroll;
 pub use egui_material_icons as material_icons;
 #[cfg(feature = "pull_to_refresh")]
 pub use egui_pull_to_refresh as pull_to_refresh;
+#[cfg(feature = "regui")]
+pub use regui;
 #[cfg(feature = "router")]
 pub use egui_router as router;
 #[cfg(feature = "suspense")]

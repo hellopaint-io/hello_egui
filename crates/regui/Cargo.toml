@@ -1,0 +1,46 @@
+[package]
+name = "regui"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/lucasmerlin/hello_egui/tree/main/crates/regui"
+homepage = "https://lucasmerlin.github.io/hello_egui/#/example/regui"
+description = "Render an egui ui inside another egui ui, transformed and with shader effects."
+keywords = ["egui", "viewport", "transform", "shader", "gui"]
+categories = ["gui"]
+license = "MIT"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = []
+## Render the child ui into an off-screen texture with wgpu. Gives exact clipping for a
+## rotated child, crisp text at any scale, and lets you run shaders over the child, such
+## as [`Blur`](crate::Blur).
+wgpu = ["dep:egui-wgpu", "dep:wgpu"]
+
+[dependencies]
+egui.workspace = true
+log.workspace = true
+
+egui-wgpu = { workspace = true, optional = true }
+wgpu = { workspace = true, optional = true }
+
+[dev-dependencies]
+eframe = { workspace = true, default-features = true, features = ["wgpu", "inspection"] }
+hello_egui_utils_dev = { workspace = true }
+egui_demo_lib = { workspace = true }
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+egui-wgpu = { workspace = true }
+image = { workspace = true }
+
+[[example]]
+name = "regui_blur"
+required-features = ["wgpu"]
+
+[[example]]
+name = "regui_window_animation"
+required-features = ["wgpu"]
+
+[lints]
+workspace = true
