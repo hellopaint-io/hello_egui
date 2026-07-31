@@ -123,6 +123,33 @@ impl BackdropBlur {
         self.put_at(ui, rect, ui.painter().add(Shape::Noop));
     }
 
+    /// Claim a place in `ui`'s paint order now, and say where the blur goes later.
+    ///
+    /// Use this to blur behind something whose rect you only learn once it has drawn, such
+    /// as an [`egui::Frame`]: the slot is claimed before the frame paints, so the blur ends
+    /// up underneath it rather than over its fill.
+    ///
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// use egui::{Color32, Frame};
+    /// use regui::BackdropBlur;
+    ///
+    /// let pending = BackdropBlur::new(12.0).behind(ui);
+    /// let frame = Frame::popup(ui.style()).fill(Color32::TRANSPARENT);
+    /// let response = frame.show(ui, |ui| ui.label("on glass"));
+    /// pending.set_rect(ui.ctx(), response.response.rect);
+    /// # });
+    /// ```
+    #[must_use = "Give the returned PendingBlur a rect, or nothing is drawn"]
+    pub fn behind(self, ui: &Ui) -> PendingBlur {
+        PendingBlur {
+            blur: self,
+            layer_id: ui.layer_id(),
+            index: ui.painter().add(Shape::Noop),
+            id: blur_id(ui.id()),
+        }
+    }
+
     /// Blur behind a window or area, underneath everything it draws.
     ///
     /// A window reserves the slot for its frame before its body runs, so nothing added
@@ -146,6 +173,8 @@ impl BackdropBlur {
             blur: self,
             layer_id,
             index,
+            // The layer is the window's own, so its id is unique per blurred window.
+            id: blur_id(layer_id.id),
         }
     }
 
@@ -209,10 +238,7 @@ impl BackdropBlur {
     }
 
     fn put_at(self, ui: &Ui, rect: Rect, index: ShapeIdx) {
-        // Each blur needs an id of its own to keep its shader uniforms apart from every
-        // other blur in the pass. Two blurs in the same `Ui` would share one, and the
-        // second would win; give them their own `Ui` if you need both.
-        let id = ui.id().with("regui_backdrop_blur");
+        let id = blur_id(ui.id());
         if let Some(shape) = self.shape(ui.ctx(), ui.visuals(), id, rect) {
             ui.painter().set(index, shape);
         }
@@ -269,23 +295,28 @@ impl BackdropBlur {
     }
 }
 
+/// Each blur needs an id of its own to keep its shader uniforms apart from every other blur
+/// in the pass. Two blurs sharing a source id would share one, and the second would win.
+fn blur_id(source: Id) -> Id {
+    source.with("regui_backdrop_blur")
+}
+
 /// A blur that has claimed its place in the paint order but does not know where it goes yet.
 ///
-/// See [`BackdropBlur::behind_layer`].
+/// See [`BackdropBlur::behind`] and [`BackdropBlur::behind_layer`].
 #[must_use = "Give this a rect, or nothing is drawn"]
 pub struct PendingBlur {
     blur: BackdropBlur,
     layer_id: LayerId,
     index: ShapeIdx,
+    id: Id,
 }
 
 impl PendingBlur {
     /// Blur behind this rect. Usually a window's `response.rect`.
     pub fn set_rect(self, ctx: &Context, rect: Rect) {
         let style = ctx.global_style();
-        // The layer is the window's own, so its id is unique per blurred window.
-        let id = self.layer_id.id.with("regui_backdrop_blur");
-        if let Some(shape) = self.blur.shape(ctx, &style.visuals, id, rect) {
+        if let Some(shape) = self.blur.shape(ctx, &style.visuals, self.id, rect) {
             ctx.layer_painter(self.layer_id).set(self.index, shape);
         }
     }
