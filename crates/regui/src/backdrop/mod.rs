@@ -68,6 +68,13 @@ impl BackdropBlur {
         }
     }
 
+    /// How far to blur, in points. Zero draws nothing at all.
+    #[inline]
+    pub fn radius(mut self, radius: f32) -> Self {
+        self.radius = radius;
+        self
+    }
+
     /// A colour laid over the blurred background.
     ///
     /// Its alpha says how far to fade the blur towards it, so
