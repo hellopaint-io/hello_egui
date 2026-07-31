@@ -36,6 +36,9 @@ pub(crate) fn child_input(
         predicted_dt: input.raw.predicted_dt,
         focused: input.raw.focused,
         system_theme: input.raw.system_theme,
+        // Held modifiers live on `RawInput` rather than in the event stream, so they have
+        // to be copied across or the child thinks nothing is held.
+        modifiers: input.raw.modifiers,
         events: input
             .raw
             .events
@@ -123,9 +126,9 @@ fn remap_event(event: &Event, to_child: Transform, gate: Gate) -> Option<Event> 
         | Event::Paste(_)
         | Event::Ime(_) => keyboard.then(|| event.clone()),
 
-        // Modifiers gate nothing: the child needs them to interpret its own events, and
-        // dropping them would leave it thinking a key is still held.
-        Event::ModifiersChanged(_) | Event::WindowFocused(_) => Some(event.clone()),
+        // Focus gates nothing: the child needs it to interpret its own events, and
+        // dropping it would leave it thinking a key is still held.
+        Event::WindowFocused(_) => Some(event.clone()),
 
         // Accessibility and screenshots address a specific widget or viewport, so they
         // are never ours to forward.

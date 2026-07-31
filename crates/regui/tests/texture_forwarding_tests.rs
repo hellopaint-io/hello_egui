@@ -180,7 +180,7 @@ fn the_child_inherits_the_parents_max_texture_side() {
                 child_viewport.set(output.viewport_id);
             }
         });
-        output.drop_without_applying_deltas();
+        drop(output);
     };
 
     // The integration reports its limit, then stops repeating it. The child starts on a

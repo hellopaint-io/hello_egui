@@ -14,7 +14,7 @@ fn main() {
     let mut show_demo = false;
     let mut demo = egui_demo_lib::DemoWindows::default();
 
-    hello_egui_utils_dev::run!(move |ui: &mut Ui, frame: &mut eframe::Frame| {
+    hello_egui_utils_dev::run_with_frame!(move |ui: &mut Ui, frame: &mut eframe::Frame| {
         // Without this, `BackdropBlur` has no device to work with and draws nothing.
         if let Some(render_state) = frame.wgpu_render_state() {
             regui::install_wgpu(ui.ctx(), render_state.clone());

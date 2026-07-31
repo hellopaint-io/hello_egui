@@ -194,15 +194,13 @@ fn offset_primitives(primitives: &mut [ClippedPrimitive], offset: Vec2) {
 fn apply_pending_textures(ui: &Ui, renderer: &mut egui_wgpu::Renderer, render_state: &RenderState) {
     let manager = ui.ctx().tex_manager();
     let manager = manager.read();
-    for (texture_id, image_deltas) in &manager.pending_delta().set {
-        for image_delta in image_deltas {
-            renderer.update_texture(
-                &render_state.device,
-                &render_state.queue,
-                *texture_id,
-                image_delta,
-            );
-        }
+    for (texture_id, image_delta) in &manager.pending_delta().set {
+        renderer.update_texture(
+            &render_state.device,
+            &render_state.queue,
+            *texture_id,
+            image_delta,
+        );
     }
 }
 

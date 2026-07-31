@@ -42,7 +42,7 @@ fn main() {
     let mut feather = 24.0_f32;
     let mut from_degrees = 6.0_f32;
 
-    hello_egui_utils_dev::run!(move |ui: &mut Ui, frame: &mut eframe::Frame| {
+    hello_egui_utils_dev::run_with_frame!(move |ui: &mut Ui, frame: &mut eframe::Frame| {
         // Without this, neither blur has a device to work with and both draw nothing.
         if let Some(render_state) = frame.wgpu_render_state() {
             regui::install_wgpu(ui.ctx(), render_state.clone());

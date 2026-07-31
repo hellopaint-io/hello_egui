@@ -20,7 +20,7 @@ fn main() {
     let mut child_checked = false;
     let mut chosen = "nothing".to_owned();
 
-    hello_egui_utils_dev::run!(move |ui: &mut Ui, frame: &mut eframe::Frame| {
+    hello_egui_utils_dev::run_with_frame!(move |ui: &mut Ui, frame: &mut eframe::Frame| {
         #[cfg(feature = "wgpu")]
         if let Some(render_state) = frame.wgpu_render_state() {
             regui::install_wgpu(ui.ctx(), render_state.clone());
