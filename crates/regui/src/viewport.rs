@@ -37,9 +37,16 @@ pub struct Regui {
     size: Vec2,
     scale: f32,
     rotation: f32,
+    mirror_x: bool,
     offset: Vec2,
     crisp: bool,
     interactive: bool,
+
+    /// Place the child here instead of laying it out. See [`Regui::transform`].
+    placement: Option<Transform>,
+
+    /// What the parent's rect senses. `None` follows `interactive`.
+    sense: Option<Sense>,
 
     /// Blur the child's own content, in points. Zero for none. Needs the `wgpu` feature.
     blur: f32,
@@ -97,9 +104,12 @@ impl Regui {
             size: Vec2::splat(200.0),
             scale: 1.0,
             rotation: 0.0,
+            mirror_x: false,
             offset: Vec2::ZERO,
             crisp: false,
             interactive: true,
+            placement: None,
+            sense: None,
             blur: 0.0,
             offscreen: false,
         }
@@ -132,6 +142,16 @@ impl Regui {
         self
     }
 
+    /// Reflect the child across its own vertical axis.
+    ///
+    /// See [`Transform::mirror_x`] — in particular, this is not the same as a negative
+    /// [`Self::scale`], and text inside a mirrored child reads backwards.
+    #[inline]
+    pub fn mirror_x(mut self, mirror_x: bool) -> Self {
+        self.mirror_x = mirror_x;
+        self
+    }
+
     /// Shift the child away from where it would otherwise be painted.
     ///
     /// This does not change how much space the child takes up in the parent, so it is a
@@ -139,6 +159,22 @@ impl Regui {
     #[inline]
     pub fn offset(mut self, offset: Vec2) -> Self {
         self.offset = offset;
+        self
+    }
+
+    /// Place the child with a transform of your own, instead of laying it out.
+    ///
+    /// Normally `Regui` reserves the space the transformed child needs at the ui's cursor
+    /// and derives the transform from where that landed. Pass one here when the placement
+    /// is already decided by something outside the layout — a camera, a scene graph, an
+    /// animation — and the child has to line up with it exactly.
+    ///
+    /// This reserves no space: the child is an overlay on whatever is already there, and
+    /// the parent's rect only exists to catch input. [`Self::scale`], [`Self::rotation`]
+    /// and [`Self::mirror_x`] are ignored, while [`Self::offset`] still nudges the result.
+    #[inline]
+    pub fn transform(mut self, transform: Transform) -> Self {
+        self.placement = Some(transform);
         self
     }
 
@@ -197,6 +233,25 @@ impl Regui {
         self
     }
 
+    /// What the parent's rect senses, if not the [`Self::interactive`] default of
+    /// [`Sense::click_and_drag`].
+    ///
+    /// The child still sees pointer events either way — this is only about what the
+    /// *parent* thinks happened over the child's rect. Set it to [`Sense::hover`] for a
+    /// child that covers something else the user needs to keep dragging, such as a canvas:
+    /// a click-and-drag rect on top would make the child the drag target everywhere, and
+    /// the canvas underneath would never see a gesture again.
+    ///
+    /// The child cannot then be the parent's drag target either, so whatever sits
+    /// underneath has to be told when the child wants the pointer. Ask the child (inside
+    /// the ui function, where `wants_pointer_input` reports the child's own viewport) and
+    /// hand the answer on.
+    #[inline]
+    pub fn sense(mut self, sense: Sense) -> Self {
+        self.sense = Some(sense);
+        self
+    }
+
     /// Run the child ui and paint it.
     pub fn show<R>(self, ui: &mut Ui, mut content: impl FnMut(&mut Ui) -> R) -> ReguiOutput<R> {
         let Self {
@@ -204,9 +259,12 @@ impl Regui {
             size,
             scale,
             rotation,
+            mirror_x,
             offset,
             crisp,
             interactive,
+            placement,
+            sense,
             blur,
             offscreen,
         } = self;
@@ -216,7 +274,15 @@ impl Regui {
         let ctx = ui.ctx().clone();
         let parent_id = ctx.viewport_id();
 
-        let (transform, response) = allocate(ui, size, scale, rotation, offset, interactive);
+        let sense = sense.unwrap_or(if interactive {
+            Sense::click_and_drag()
+        } else {
+            Sense::hover()
+        });
+        let (transform, response) = match placement {
+            Some(placement) => place(ui, id, size, placement, offset, sense),
+            None => allocate(ui, size, scale, rotation, mirror_x, offset, sense),
+        };
 
         if !transform.is_valid() {
             // A scale of zero or a NaN rotation would make the inverse transform, and
@@ -245,7 +311,7 @@ impl Regui {
         // global zoom factor for us, and doing that twice would zoom the child twice.
         let native_pixels_per_point = ctx.pixels_per_point() / ctx.zoom_factor();
         let child_pixels_per_point =
-            native_pixels_per_point * if crisp { scale.abs() } else { 1.0 };
+            native_pixels_per_point * if crisp { transform.scale.abs() } else { 1.0 };
 
         let input = input::child_input(
             ui,
@@ -379,25 +445,44 @@ fn allocate(
     size: Vec2,
     scale: f32,
     rotation: f32,
+    mirror_x: bool,
     offset: Vec2,
-    interactive: bool,
+    sense: Sense,
 ) -> (Transform, Response) {
     let child_rect = Rect::from_min_size(Pos2::ZERO, size);
     let unplaced = Transform {
         scale,
         rotation: Rot2::from_angle(rotation),
         translation: Vec2::ZERO,
+        mirror_x,
     };
     let bounds = unplaced.bounding_rect(child_rect);
-    let sense = if interactive {
-        Sense::click_and_drag()
-    } else {
-        Sense::hover()
-    };
     let (rect, response) = ui.allocate_exact_size(bounds.size(), sense);
     let transform = Transform {
         translation: (rect.min - bounds.min) + offset,
         ..unplaced
     };
+    (transform, response)
+}
+
+/// Take the caller's transform as given, and only interact with where it puts the child.
+///
+/// No space is reserved: a caller who brought their own transform has already decided
+/// where the child goes, and reserving space at the ui cursor would push the layout around
+/// for a child that is not there.
+fn place(
+    ui: &mut Ui,
+    id: Id,
+    size: Vec2,
+    placement: Transform,
+    offset: Vec2,
+    sense: Sense,
+) -> (Transform, Response) {
+    let transform = Transform {
+        translation: placement.translation + offset,
+        ..placement
+    };
+    let bounds = transform.bounding_rect(Rect::from_min_size(Pos2::ZERO, size));
+    let response = ui.interact(bounds, id, sense);
     (transform, response)
 }
