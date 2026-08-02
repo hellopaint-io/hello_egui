@@ -40,7 +40,7 @@ pub struct HistoryEvent {
 }
 
 /// History Result type
-type HistoryResult<T = ()> = Result<T, HistoryError>;
+pub type HistoryResult<T = ()> = Result<T, HistoryError>;
 
 /// History error
 #[derive(Debug, thiserror::Error)]

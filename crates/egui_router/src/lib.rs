@@ -10,6 +10,9 @@ pub mod history;
 mod route_kind;
 mod router;
 mod router_builder;
+/// The iOS-style swipe-to-go-back gesture, usable on its own if you drive your
+/// own navigation stack.
+pub mod swipe_back;
 /// Transition types
 pub mod transition;
 

@@ -154,7 +154,13 @@ pub enum TransitionType {
     },
 }
 
-pub(crate) struct ActiveTransition {
+/// A transition that is currently running.
+///
+/// Drive it with [`ActiveTransition::advance`] once per frame and render the
+/// two pages with [`ActiveTransition::show`]. The two are separate so the
+/// render pass can take `&self` — useful if the transition lives in state that
+/// is only borrowed immutably while rendering.
+pub struct ActiveTransition {
     duration: Option<f32>,
     progress: f32,
     easing: fn(f32) -> f32,
@@ -165,12 +171,16 @@ pub(crate) struct ActiveTransition {
     manual_control: bool,
 }
 
-pub(crate) enum ActiveTransitionResult {
+/// Whether an [`ActiveTransition`] has run to completion.
+pub enum ActiveTransitionResult {
+    /// The transition finished this frame and can be dropped.
     Done,
+    /// The transition is still running.
     Continue,
 }
 
 impl ActiveTransition {
+    /// A transition for navigating forward (pushing a page).
     pub fn forward(config: TransitionConfig) -> Self {
         Self {
             duration: config.duration,
@@ -183,6 +193,8 @@ impl ActiveTransition {
         }
     }
 
+    /// A transition for navigating backward (popping a page). Plays the
+    /// forward transition in reverse.
     pub fn backward(config: TransitionConfig) -> Self {
         Self {
             duration: config.duration,
@@ -195,6 +207,9 @@ impl ActiveTransition {
         }
     }
 
+    /// A transition whose progress is driven by the caller (e.g. a
+    /// swipe gesture) rather than by elapsed time. [`ActiveTransition::advance`]
+    /// is a no-op on it, and it never reports [`ActiveTransitionResult::Done`].
     pub fn manual(config: TransitionConfig) -> Self {
         Self {
             duration: config.duration,
@@ -207,18 +222,23 @@ impl ActiveTransition {
         }
     }
 
+    /// How far the transition has run, from 0 to 1.
     pub fn progress(&self) -> f32 {
         self.progress
     }
 
+    /// Whether this is a backward (pop) transition.
     pub fn is_backward(&self) -> bool {
         self.backward
     }
 
+    /// Set the progress directly. Used to drive a
+    /// [`manual`](ActiveTransition::manual) transition from a gesture.
     pub fn set_progress(&mut self, progress: f32) {
         self.progress = progress.clamp(0.0, 1.0);
     }
 
+    /// Fall back to `duration` when the [`TransitionConfig`] didn't set one.
     pub fn with_default_duration(mut self, duration: Option<f32>) -> Self {
         if self.duration.is_none() {
             self.duration = duration;
@@ -226,18 +246,37 @@ impl ActiveTransition {
         self
     }
 
+    /// Advance the transition clock by `dt` seconds, returning whether it
+    /// finished. `default_duration` applies when neither the
+    /// [`TransitionConfig`] nor [`ActiveTransition::with_default_duration`] set
+    /// one — pass `ui.style().animation_time`.
+    ///
+    /// Call this once per frame, before [`ActiveTransition::show`].
+    pub fn advance(&mut self, dt: f32, default_duration: f32) -> ActiveTransitionResult {
+        if self.manual_control {
+            return ActiveTransitionResult::Continue;
+        }
+        self.progress += dt / self.duration.unwrap_or(default_duration);
+        if self.progress >= 1.0 {
+            ActiveTransitionResult::Done
+        } else {
+            ActiveTransitionResult::Continue
+        }
+    }
+
+    /// Render the incoming page (`content_in`) and, if there is one, the
+    /// outgoing page (`content_out`) at the current progress.
+    ///
+    /// The `usize` in each pair is a unique, stable id for that page — it
+    /// isolates the page in egui's auto-id space so two pages rendered in the
+    /// same frame don't collide.
     pub fn show<State>(
-        &mut self,
+        &self,
         ui: &mut Ui,
         state: &mut State,
         (in_id, content_in): (usize, impl FnOnce(&mut Ui, &mut State)),
         content_out: Option<(usize, impl FnOnce(&mut Ui, &mut State))>,
-    ) -> ActiveTransitionResult {
-        if !self.manual_control {
-            let dt = ui.input(|i| i.stable_dt);
-            self.progress += dt / self.duration.unwrap_or_else(|| ui.style().animation_time);
-        }
-
+    ) {
         let t = self.progress.min(1.0);
         ui.ctx().request_repaint();
 
@@ -291,14 +330,11 @@ impl ActiveTransition {
                 content_in(&mut in_ui, state);
             });
         }
-
-        if self.progress >= 1.0 && !self.manual_control {
-            ActiveTransitionResult::Done
-        } else {
-            ActiveTransitionResult::Continue
-        }
     }
 
+    /// Render a single page with no transition running. `with_id` isolates it
+    /// in egui's auto-id space exactly as [`ActiveTransition::show`] does, so
+    /// widget ids stay stable across the start and end of a transition.
     pub fn show_default(ui: &mut Ui, with_id: usize, content: impl FnOnce(&mut Ui)) {
         with_temp_auto_id(ui, with_id, |ui| {
             let mut ui = ui.new_child(
