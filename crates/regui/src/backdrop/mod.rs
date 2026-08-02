@@ -277,6 +277,7 @@ impl BackdropBlur {
             BlurCallback {
                 format: render_state.target_format,
                 id,
+                read_margin: self.radius,
                 settings: Settings {
                     radius: self.radius * pixels_per_point,
                     tint: self.tint.unwrap_or_else(|| {
@@ -342,6 +343,10 @@ struct BlurCallback {
     /// Which blurred widget this is, so it gets its own uniforms rather than sharing them
     /// with every other blur in the pass.
     id: Id,
+
+    /// How far outside its own rect the blur reads, in points.
+    read_margin: f32,
+
     settings: Settings,
 }
 
@@ -370,6 +375,13 @@ impl CallbackTrait for BlurCallback {
 
     fn needs_backdrop(&self) -> bool {
         self.settings.radius > 0.0
+    }
+
+    fn backdrop_rect(&self, drawn: egui::Rect) -> egui::Rect {
+        // A gaussian of this radius reaches that far past every edge of what it draws. Ask
+        // for less and the outermost samples read whatever the copy left there, which is a
+        // stale frame: the blur then picks up a seam along its own border.
+        drawn.expand(self.read_margin)
     }
 
     fn process_backdrop(
