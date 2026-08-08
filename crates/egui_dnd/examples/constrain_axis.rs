@@ -1,19 +1,19 @@
 use eframe::{egui, NativeOptions};
-use egui::{CentralPanel, Rect, Scene};
-use egui_dnd::dnd;
+use egui::CentralPanel;
+use egui_dnd::{dnd, DragAxis};
 
 pub fn main() -> eframe::Result<()> {
-    let mut items = vec!["alfred", "bernhard", "christian"];
-
-    let mut rect = Rect::ZERO;
+    let mut items = vec!["alfred", "bernhard", "christian", "dominik"];
 
     eframe::run_ui_native(
-        "DnD Simple Example",
+        "DnD Constrain Axis Example",
         NativeOptions::default(),
         move |ui, _frame| {
             CentralPanel::default().show(ui, |ui| {
-                Scene::new().show(ui, &mut rect, |ui| {
-                    dnd(ui, "dnd_example").show_vec(&mut items, |ui, item, handle, state| {
+                ui.label("The dragged item can only move vertically:");
+                dnd(ui, "dnd_example")
+                    .with_drag_axis(DragAxis::Vertical)
+                    .show_vec(&mut items, |ui, item, handle, state| {
                         ui.horizontal(|ui| {
                             handle.ui(ui, |ui| {
                                 if state.dragged {
@@ -25,7 +25,6 @@ pub fn main() -> eframe::Result<()> {
                             ui.label(*item);
                         });
                     });
-                });
             });
         },
     )

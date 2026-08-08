@@ -1,6 +1,6 @@
 [package]
 name = "egui_router"
-version = "0.7.0"
+version = "0.9.0"
 edition = "2021"
 authors = ["Lucas Meurer"]
 description = "A SPA router for egui"
@@ -44,11 +44,13 @@ js-sys = "0.3"
 wasm-bindgen = "0.2"
 
 [dev-dependencies]
-egui_inbox = { workspace = true, features = ["type_inbox"] }
 eframe = { workspace = true, default-features = true }
-egui_animation = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-egui_suspense = { workspace = true, features = ["async", "tokio"] }
+# Dev-deps on other workspace crates use a path without a version, so cargo
+# drops them from the published manifest and the publish order can ignore them.
+egui_inbox = { path = "../egui_inbox", features = ["type_inbox"] }
+egui_animation = { path = "../egui_animation" }
+egui_suspense = { path = "../egui_suspense", features = ["async", "tokio"] }
 
 dioxus-devtools = { git = "https://github.com/DioxusLabs/dioxus" }
 

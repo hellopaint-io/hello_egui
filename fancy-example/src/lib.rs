@@ -81,7 +81,15 @@ impl App {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(ui.visuals().panel_fill.gamma_multiply(0.7)))
+            .frame(
+                egui::Frame::NONE.fill(
+                    ui.ctx()
+                        .global_style()
+                        .visuals
+                        .panel_fill
+                        .gamma_multiply(0.7),
+                ),
+            )
             .show(ui, |ui| {
                 vertex_gradient(
                     ui,

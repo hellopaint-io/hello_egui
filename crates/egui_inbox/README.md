@@ -1,6 +1,6 @@
 # egui_inbox
 
-[![egui_ver](https://img.shields.io/badge/egui-0.34.0-blue)](https://github.com/emilk/egui)
+[![egui_ver](https://img.shields.io/badge/egui-0.35.0-blue)](https://github.com/emilk/egui)
 [![Latest version](https://img.shields.io/crates/v/egui_inbox.svg)](https://crates.io/crates/egui_inbox)
 [![Documentation](https://docs.rs/egui_inbox/badge.svg)](https://docs.rs/egui_inbox)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
@@ -29,11 +29,11 @@ pub fn main() -> eframe::Result<()> {
     let inbox = UiInbox::new();
     let mut state = None;
 
-    eframe::run_simple_native(
+    eframe::run_ui_native(
         "DnD Simple Example",
         Default::default(),
-        move |ctx, _frame| {
-            CentralPanel::default().show(ctx, |ui| {
+        move |ui, _frame| {
+            CentralPanel::default().show(ui, |ui| {
                 // `read` will return an iterator over all pending messages
                 if let Some(last) = inbox.read(ui).last() {
                     state = last;

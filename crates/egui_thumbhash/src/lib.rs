@@ -5,9 +5,9 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use ahash::HashMap;
 use base64::prelude::BASE64_STANDARD_NO_PAD;
 use base64::Engine;
-use ahash::HashMap;
 use egui::load::{ImageLoadResult, ImageLoader, ImagePoll, LoadError};
 use egui::mutex::Mutex;
 use egui::{ColorImage, Context, SizeHint};

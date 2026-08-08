@@ -28,8 +28,8 @@ mod egui_widgets {
     use super::FlexWidget;
     use crate::{FlexInstance, FlexItem};
     use egui::widgets::{
-        Button, Checkbox, DragValue, Hyperlink, Image, Label, Link, ProgressBar,
-        RadioButton, Slider, Spinner, TextEdit,
+        Button, Checkbox, DragValue, Hyperlink, Image, Label, Link, ProgressBar, RadioButton,
+        Slider, Spinner, TextEdit,
     };
 
     macro_rules! impl_widget {

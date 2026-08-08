@@ -65,18 +65,30 @@ fn app(ui: &mut Ui, router: &mut RouterType, window_router: &mut RouterType) {
     let mut router = router.get_or_insert_with(|| init(ui));
     let mut window_router = window_router.get_or_insert_with(|| init(ui));
 
-    for state in &mut [&mut router, &mut window_router] {
-        state
-            .1
-            .inbox
-            .read()
-            .for_each(|msg: RouterMessage| match msg {
-                RouterMessage::Navigate(route) => {
-                    state.0.navigate(&mut state.1, route).unwrap();
-                }
-                RouterMessage::Back => {
-                    state.0.back().unwrap();
-                }
+    eframe::run_ui_native(
+        "Router Example",
+        NativeOptions::default(),
+        move |ui, _frame| {
+            let mut router = router.get_or_insert_with(|| init(ui.ctx()));
+            let mut window_router = window_router.get_or_insert_with(|| init(ui.ctx()));
+
+            for state in &mut [&mut router, &mut window_router] {
+                state
+                    .1
+                    .inbox
+                    .read()
+                    .for_each(|msg: RouterMessage| match msg {
+                        RouterMessage::Navigate(route) => {
+                            state.0.navigate(&mut state.1, route).unwrap();
+                        }
+                        RouterMessage::Back => {
+                            state.0.back().unwrap();
+                        }
+                    });
+            }
+
+            CentralPanel::default().show(ui, |ui| {
+                router.0.ui(ui, &mut router.1);
             });
     }
 

@@ -1,6 +1,6 @@
 # egui_flex
 
-[![egui_ver](https://img.shields.io/badge/egui-0.34.0-blue)](https://github.com/emilk/egui)
+[![egui_ver](https://img.shields.io/badge/egui-0.35.0-blue)](https://github.com/emilk/egui)
 [![Latest version](https://img.shields.io/crates/v/egui_flex.svg)](https://crates.io/crates/egui_flex)
 [![Documentation](https://docs.rs/egui_flex/badge.svg)](https://docs.rs/egui_flex)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
@@ -92,8 +92,8 @@ use egui::{Button, CentralPanel};
 use egui_flex::{item, Flex, FlexAlignContent};
 
 fn main() -> eframe::Result {
-    eframe::run_simple_native(file!(), NativeOptions::default(), |ctx, _frame| {
-        CentralPanel::default().show(ctx, |ui| {
+    eframe::run_ui_native(file!(), NativeOptions::default(), |ui, _frame| {
+        CentralPanel::default().show(ui, |ui| {
             Flex::horizontal().show(ui, |flex| {
                 flex.add(item().grow(1.0), Button::new("Growing button"));
                 flex.add(item(), Button::new("Non-growing button"));

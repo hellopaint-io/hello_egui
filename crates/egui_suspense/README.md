@@ -1,6 +1,6 @@
 # egui_suspense
 
-[![egui_ver](https://img.shields.io/badge/egui-0.34.0-blue)](https://github.com/emilk/egui)
+[![egui_ver](https://img.shields.io/badge/egui-0.35.0-blue)](https://github.com/emilk/egui)
 [![Latest version](https://img.shields.io/crates/v/egui_suspense.svg)](https://crates.io/crates/egui_suspense)
 [![Documentation](https://docs.rs/egui_suspense/badge.svg)](https://docs.rs/egui_suspense)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
@@ -31,11 +31,11 @@ pub fn main() -> eframe::Result<()> {
         });
     });
 
-    eframe::run_simple_native(
+    eframe::run_ui_native(
         "DnD Simple Example",
         Default::default(),
-        move |ctx, _frame| {
-            CentralPanel::default().show(ctx, |ui| {
+        move |ui, _frame| {
+            CentralPanel::default().show(ui, |ui| {
                 
                 // This will show a spinner while loading and an error message with a 
                 // retry button if the callback returns an error.

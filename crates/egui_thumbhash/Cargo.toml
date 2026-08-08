@@ -1,6 +1,6 @@
 [package]
 name = "egui_thumbhash"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 authors = ["Lucas Meurer"]
 description = "Easily use thumbhashes in egui"
@@ -10,7 +10,7 @@ homepage = "https://lucasmerlin.github.io/hello_egui/"
 keywords = ["egui", "thumbhash", "image", "placeholder"]
 
 [dependencies]
-ahash = "0.8"
+ahash = "0.8.12"
 thumbhash = "0.1.0"
 egui = { workspace = true }
 base64 = "0.22.1"

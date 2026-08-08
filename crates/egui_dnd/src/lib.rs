@@ -2,8 +2,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use egui::{Id, Ui};
-pub use state::{DragDropConfig, DragDropItem, DragDropResponse, DragUpdate, Handle};
+use egui::{AsId, Id, Ui};
+pub use state::{DragAxis, DragDropConfig, DragDropItem, DragDropResponse, DragUpdate, Handle};
 
 pub use crate::item_iterator::ItemIterator;
 use crate::state::DragDropUi;
@@ -27,7 +27,6 @@ pub struct Dnd<'a> {
 /// You can use [`Dnd::with_mouse_config`] or [`Dnd::with_touch_config`] to configure the drag detection.
 /// Example usage:
 /// ```rust no_run
-/// use std::hash::Hash;
 /// use eframe::egui;
 /// use egui::CentralPanel;
 /// use egui_dnd::dnd;
@@ -36,7 +35,7 @@ pub struct Dnd<'a> {
 ///     let mut items = vec!["alfred", "bernhard", "christian"];
 ///
 ///     eframe::run_ui_native("DnD Simple Example", Default::default(), move |ui, _frame| {
-///         CentralPanel::default().show_inside(ui, |ui| {
+///         CentralPanel::default().show(ui, |ui| {
 ///
 ///             dnd(ui, "dnd_example")
 ///                 .show_vec(&mut items, |ui, item, handle, state| {
@@ -50,7 +49,7 @@ pub struct Dnd<'a> {
 ///     })
 /// }
 /// ```
-pub fn dnd(ui: &mut Ui, id_source: impl egui::AsId) -> Dnd<'_> {
+pub fn dnd(ui: &mut Ui, id_source: impl AsId) -> Dnd<'_> {
     let id = Id::new(id_source).with("dnd");
     let mut dnd_ui: DragDropUi =
         ui.data_mut(|data| (*data.get_temp_mut_or_default::<DragDropUi>(id)).clone());
@@ -67,7 +66,7 @@ pub fn dnd(ui: &mut Ui, id_source: impl egui::AsId) -> Dnd<'_> {
 
 impl<'a> Dnd<'a> {
     /// Initialize the drag and drop UI. Same as [dnd].
-    pub fn new(ui: &'a mut Ui, id_source: impl egui::AsId) -> Self {
+    pub fn new(ui: &'a mut Ui, id_source: impl AsId) -> Self {
         dnd(ui, id_source)
     }
 
@@ -86,6 +85,15 @@ impl<'a> Dnd<'a> {
     #[must_use]
     pub fn with_touch_config(mut self, config: Option<DragDropConfig>) -> Self {
         self.drag_drop_ui = self.drag_drop_ui.with_touch_config(config);
+        self
+    }
+
+    /// Constrains the motion of the dragged item to a single axis.
+    /// This only affects the visual position of the floating item.
+    /// The default is [`DragAxis::Both`] (no constraint).
+    #[must_use]
+    pub fn with_drag_axis(mut self, axis: DragAxis) -> Self {
+        self.drag_drop_ui = self.drag_drop_ui.with_drag_axis(axis);
         self
     }
 
@@ -119,7 +127,7 @@ impl<'a> Dnd<'a> {
 
     /// Display the drag and drop UI.
     /// `items` should be an iterator over items that should be sortable.
-    /// Each item needs to implement [`DragDropItem`]. This is automatically implement for every type that implements [Hash].
+    /// Each item needs to implement [`DragDropItem`]. This is automatically implement for every type that implements [`AsId`].
     ///
     /// It can also be implemented manually. **Each item needs to have a unique id.**
     /// If you need to allow duplicate items in your list and cannot add a id field for some reason,

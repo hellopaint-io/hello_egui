@@ -1,4 +1,14 @@
-# egui_form changelog
+# Changelog
+
+## 0.10.0
+
+- Update egui to 0.36
+- Add release-plz to automate releases ([#105](https://github.com/lucasmerlin/hello_egui/pull/105))
+
+## 0.9.0
+
+- Update egui to 0.35
+- Update garde to 0.23
 
 ## 0.8.0
 
