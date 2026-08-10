@@ -369,10 +369,17 @@ impl Regui {
     ///
     /// See [`RootScope`] for what the second argument is for: menus and anything else that
     /// has no business being clipped to the child or rotated with it.
-    pub fn show_with_root<R>(
+    ///
+    /// `'a` is how long whatever the child hands out may borrow for. It is a parameter
+    /// rather than an elided lifetime on purpose: elided, it would be higher-ranked, the
+    /// content function would have to satisfy every possible `'a`, and the only closures
+    /// that do are `'static` ones - which rules out a menu that reads the state its button
+    /// was drawn from. Inferred at the call site instead, it comes out as "at least as long
+    /// as this call", which is exactly as long as the queued closures live.
+    pub fn show_with_root<'a, R>(
         self,
         ui: &mut Ui,
-        content: impl FnMut(&mut Ui, &RootScope<'_>) -> R,
+        content: impl FnMut(&mut Ui, &RootScope<'a>) -> R,
     ) -> ReguiOutput<R> {
         let retained = self.show_impl(ui, content);
         ReguiOutput {
@@ -404,18 +411,18 @@ impl Regui {
     /// A child that put anything out there last pass does not reuse its image: what it
     /// queued is drawn by a pass that did not happen, so retaining a child with a menu
     /// open would take the menu down. See [`RootScope`].
-    pub fn show_retained_with_root<R>(
+    pub fn show_retained_with_root<'a, R>(
         self,
         ui: &mut Ui,
-        content: impl FnMut(&mut Ui, &RootScope<'_>) -> R,
+        content: impl FnMut(&mut Ui, &RootScope<'a>) -> R,
     ) -> ReguiOutput<Option<R>> {
         self.show_impl(ui, content)
     }
 
-    fn show_impl<R>(
+    fn show_impl<'a, R>(
         self,
         ui: &mut Ui,
-        mut content: impl FnMut(&mut Ui, &RootScope<'_>) -> R,
+        mut content: impl FnMut(&mut Ui, &RootScope<'a>) -> R,
     ) -> ReguiOutput<Option<R>> {
         let Self {
             id_salt,

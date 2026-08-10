@@ -60,8 +60,11 @@ fn harness(rotation: f32, escape: bool) -> (Harness<'static>, Runs, Seen) {
                 .retain(1)
                 .show_retained_with_root(ui, |ui, root| {
                     counted.set(counted.get() + 1);
-                    ui.painter()
-                        .rect_filled(ui.ctx().viewport_rect(), 0.0, Color32::from_rgb(20, 80, 20));
+                    ui.painter().rect_filled(
+                        ui.ctx().viewport_rect(),
+                        0.0,
+                        Color32::from_rgb(20, 80, 20),
+                    );
                     if escape {
                         // Mapped before queuing: the closure outlives this borrow of the
                         // scope, so it cannot ask the scope anything once it is running.
@@ -196,6 +199,85 @@ fn a_child_that_escaped_keeps_running() {
 }
 
 #[test]
+fn a_shut_popup_costs_the_child_nothing() {
+    // The one that decides whether any of this is worth having. A menu is written the same
+    // way whether it is open or not - the popup decides - so if handing one out cost a pass
+    // every time the button was drawn, every child with a menu would run forever.
+    let state = render_state();
+    let installed = state.clone();
+    let runs = Runs::default();
+    let counted = Rc::clone(&runs);
+
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .renderer(WgpuTestRenderer::from_render_state(state))
+        .build_ui(move |ui| {
+            regui::install_wgpu(ui.ctx(), installed.clone());
+            Regui::new("child")
+                .size(CHILD)
+                .retain(1)
+                .show_retained_with_root(ui, |ui, root| {
+                    counted.set(counted.get() + 1);
+                    let response = ui.button("Tools");
+                    root.popup(&response, |ui, response| {
+                        egui::Popup::menu(response).show(|ui| {
+                            let _ = ui.button("Brush");
+                        });
+                    });
+                });
+        });
+
+    for _ in 0..8 {
+        harness.step();
+    }
+    let settled = runs.get();
+    for _ in 0..5 {
+        harness.step();
+    }
+    assert_eq!(
+        runs.get(),
+        settled,
+        "a child whose menu is shut should still be able to sit a pass out"
+    );
+}
+
+#[test]
+fn what_escapes_may_borrow_from_around_the_child() {
+    // A menu reads the state its button was drawn from, and that state is not `'static`.
+    // If the queued closure had to be, every real call site would have to clone its world
+    // into the menu - so this is a compile-time test with an assertion stapled on.
+    let state = render_state();
+    let installed = state.clone();
+    let seen: Seen = Seen::default();
+    let reported = Rc::clone(&seen);
+
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .renderer(WgpuTestRenderer::from_render_state(state))
+        .build_ui(move |ui| {
+            regui::install_wgpu(ui.ctx(), installed.clone());
+            // Borrowed by the escaping closure below, and gone by the end of this frame.
+            let borrowed = vec2(11.0, 13.0);
+            let reported = Rc::clone(&reported);
+            Regui::new("child")
+                .size(CHILD)
+                .show_with_root(ui, |ui, root| {
+                    let anchor = root.rect(ui.ctx().viewport_rect());
+                    let reported = Rc::clone(&reported);
+                    root.ui(move |ui| {
+                        let rect = Rect::from_min_size(anchor.min, borrowed);
+                        ui.painter().rect_filled(rect, 0.0, Color32::RED);
+                        reported.set(Some(rect));
+                    });
+                });
+        });
+    harness.run();
+
+    let rect = seen.get().expect("the escaping closure never ran");
+    assert_eq!(rect.size(), vec2(11.0, 13.0));
+}
+
+#[test]
 fn an_escaped_popup_is_not_clipped_to_the_child() {
     let state = render_state();
     let installed = state.clone();
@@ -213,6 +295,9 @@ fn an_escaped_popup_is_not_clipped_to_the_child() {
                     let response = ui.allocate_response(vec2(40.0, 20.0), egui::Sense::click());
                     let child_rect = response.rect;
                     let reported = Rc::clone(&reported);
+                    // `popup` draws nothing while the popup is shut, and nothing here is
+                    // going to click the button.
+                    egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&response));
                     root.popup(&response, move |ui, response| {
                         // The response has to be talking about the host's coordinates, or
                         // a menu built on it lands wherever the child's rect points.

@@ -104,8 +104,35 @@ impl<'a> RootScope<'a> {
     ///     });
     /// });
     /// ```
+    ///
+    /// # Only while it is open
+    ///
+    /// Unlike [`Self::ui`], this queues nothing while the popup is shut. It has to: a child
+    /// with anything out there cannot be retained, so a call site that queued its menu
+    /// every pass - which is how [`egui::Popup::menu`] is normally written, since the popup
+    /// decides for itself whether to draw - would keep its child awake forever for a menu
+    /// nobody had opened.
+    ///
+    /// Open is read from egui's memory, so this fits any popup that tracks itself there:
+    /// [`egui::Popup::menu`], [`egui::Popup::context_menu`], anything built on
+    /// [`egui::Popup::from_toggle_button_response`]. A popup that keeps its own open flag
+    /// has to gate itself and go through [`Self::ui`].
     pub fn popup(&self, response: &Response, content: impl FnOnce(&mut Ui, &Response) + 'a) {
+        if !popup_wanted(response) {
+            return;
+        }
         let moved = self.response(response);
         self.ui(move |ui| content(ui, &moved));
     }
+}
+
+/// Is there a popup on this response to draw, or about to be one?
+///
+/// The click is not redundant with the memory: the pass that opens a popup is the pass the
+/// click arrives on, and the toggle that records it happens inside the popup - which has
+/// not run yet.
+fn popup_wanted(response: &Response) -> bool {
+    response.clicked()
+        || response.secondary_clicked()
+        || egui::Popup::is_id_open(&response.ctx, egui::Popup::default_response_id(response))
 }
