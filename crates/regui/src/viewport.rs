@@ -48,6 +48,10 @@ pub struct Regui {
     /// What the parent's rect senses. `None` follows `interactive`.
     sense: Option<Sense>,
 
+    /// Whether the child sees the pointer, when the caller would rather decide. See
+    /// [`Regui::pointer`].
+    pointer: Option<bool>,
+
     /// Blur the child's own content, in points. Zero for none. Needs the `wgpu` feature.
     blur: f32,
 
@@ -120,6 +124,14 @@ struct State {
     ran_last_pass: bool,
 }
 
+/// The child's accessibility nodes, kept apart from [`State`] because they are neither
+/// `Copy` nor small.
+///
+/// A retained child is on screen without running, so its nodes have to be grafted onto
+/// every one of the parent's trees, not just the ones where it laid itself out.
+#[derive(Clone, Default)]
+struct Accessibility(Option<egui::AccessKitSubtree>);
+
 impl Regui {
     /// Start building a child ui.
     ///
@@ -137,6 +149,7 @@ impl Regui {
             interactive: true,
             placement: None,
             sense: None,
+            pointer: None,
             blur: 0.0,
             offscreen: false,
             retain: None,
@@ -261,6 +274,24 @@ impl Regui {
         self
     }
 
+    /// Decide for yourself whether the child sees the pointer this pass.
+    ///
+    /// `Regui` normally works this out from the parent's [`Response`]: the pointer is over
+    /// its rect, or it is being dragged. Both halves of that can be wrong for a child that
+    /// is not the shape of its rect. A child given [`Self::sense`] of [`Sense::hover`]
+    /// cannot be dragged at all, so a drag that starts inside it and leaves - which is
+    /// every slider drag worth the name - looks like the pointer simply left. And a child
+    /// that is mostly transparent, laid over something the user is still working on, is
+    /// "under the pointer" almost always while being under it almost never.
+    ///
+    /// Since a child being fed the pointer is never retained, getting this right is also
+    /// what decides whether [`Self::retain`] saves anything.
+    #[inline]
+    pub fn pointer(mut self, over: bool) -> Self {
+        self.pointer = Some(over);
+        self
+    }
+
     /// What the parent's rect senses, if not the [`Self::interactive`] default of
     /// [`Sense::click_and_drag`].
     ///
@@ -351,6 +382,7 @@ impl Regui {
             interactive,
             placement,
             sense,
+            pointer,
             blur,
             offscreen,
             // A blurred child is rendered inset into a padded texture, so the quad that
@@ -391,7 +423,7 @@ impl Regui {
 
         let mut state: State = ctx.data_mut(|data| data.get_temp(id)).unwrap_or_default();
 
-        let has_pointer = interactive && input::wants_pointer(&response);
+        let has_pointer = interactive && pointer.unwrap_or_else(|| input::wants_pointer(&response));
         let gate = Gate {
             pointer: has_pointer,
             keyboard: interactive && state.child_has_focus,
@@ -419,6 +451,7 @@ impl Regui {
                 && reuse(ui, id, size, texture_pixels_per_point, transform)
         });
         if reused {
+            keep_accessible(&ctx, viewport_id, id, transform);
             state.ran_last_pass = false;
             ctx.data_mut(|data| data.insert_temp(id, state));
             return ReguiOutput {
@@ -559,6 +592,14 @@ fn run_child<R>(
     textures_delta.clear();
 
     output::forward_platform_output(&ctx, platform_output, pass.transform, pass.pointer_is_over);
+    let accessibility = Accessibility(output::forward_accesskit(
+        &ctx,
+        pass.viewport_id,
+        pass.id,
+        pass.transform,
+        None,
+    ));
+    ctx.data_mut(|data| data.insert_temp(pass.id, accessibility));
     output::forward_repaint(&ctx, pass.viewport_id, pass.parent_id);
     state.repaint_at = output::repaint_deadline(&ctx, pass.viewport_id, pass.now);
 
@@ -577,6 +618,16 @@ fn run_child<R>(
     );
 
     (inner, rendered_offscreen)
+}
+
+/// Put a skipped child's widgets into the parent's tree again.
+///
+/// A retained child is on screen, so it has to be in the tree; it just did not build one
+/// this pass, so the nodes from the pass that did are grafted instead.
+fn keep_accessible(ctx: &egui::Context, viewport_id: ViewportId, id: Id, transform: Transform) {
+    let remembered: Accessibility = ctx.data_mut(|data| data.get_temp(id)).unwrap_or_default();
+    let grafted = output::forward_accesskit(ctx, viewport_id, id, transform, remembered.0);
+    ctx.data_mut(|data| data.insert_temp(id, Accessibility(grafted)));
 }
 
 /// Paint the image the child left behind last time, if it is still there.

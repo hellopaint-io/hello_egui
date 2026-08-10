@@ -9,12 +9,16 @@ use std::rc::Rc;
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, Rect, Vec2, vec2};
 use egui_kittest::{
     Harness,
+    kittest::Queryable as _,
     wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup},
 };
 use regui::{Regui, Transform};
 
 const SIZE: [f32; 2] = [320.0, 220.0];
 const CHILD: Vec2 = vec2(240.0, 150.0);
+
+/// The child's own screen, for checking where its widgets ended up in the parent.
+const CHILD_RECT: Rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(CHILD.x, CHILD.y));
 
 /// Somewhere the pointer is not over the child.
 const OUTSIDE: Pos2 = Pos2::new(300.0, 210.0);
@@ -187,4 +191,35 @@ fn a_retained_child_lets_the_app_idle() {
         !harness.ctx.has_requested_repaint(),
         "a settled, retained child should leave nothing asking for another frame"
     );
+}
+
+/// A retained child is on screen whether or not it ran, so it has to stay in the
+/// accessibility tree - which is also how a test driver finds anything inside it.
+#[test]
+fn a_retained_child_stays_in_the_accessibility_tree() {
+    let key = Rc::new(Cell::new(0));
+    let (mut harness, runs, placement) = harness(Rc::clone(&key), |ui| {
+        let _ = ui.button("still here");
+    });
+
+    settle(&mut harness);
+    let settled = runs.get();
+    harness.step();
+    harness.step();
+    assert_eq!(runs.get(), settled, "the child should have stopped running");
+
+    let node = harness.get_by_label("still here");
+    let found = node.rect();
+    assert!(
+        placement
+            .get()
+            .bounding_rect(CHILD_RECT)
+            .contains_rect(found),
+        "the retained button was found at {found:?}, which is not where the child was drawn"
+    );
+
+    // And it is still a button, so clicking where the tree says it is works.
+    node.click();
+    harness.step();
+    harness.step();
 }

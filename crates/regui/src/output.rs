@@ -1,5 +1,5 @@
 use crate::Transform;
-use egui::{Context, PlatformOutput, ViewportId};
+use egui::{AccessKitSubtree, Context, Id, PlatformOutput, ViewportId};
 use std::time::Duration;
 
 /// Merge the child's platform output into the parent's.
@@ -22,10 +22,11 @@ pub(crate) fn forward_platform_output(
     }
 
     // Each pass produces a whole AccessKit tree, so `append` overwrites rather than
-    // merges. Forwarding the child's tree would therefore throw the parent's away, and
-    // the app would lose accessibility for everything outside the child. Dropping the
-    // child's tree costs less: only the child is inaccessible.
-    // TODO(lucas): graft the child's tree onto the parent's node instead.
+    // merges: forwarding the child's would throw the parent's away, and the app would lose
+    // accessibility for everything outside the child. The child's nodes are grafted onto
+    // the parent's tree by `forward_accesskit` instead, which is the only way they end up
+    // in the right place anyway - this tree has them where the child drew them, which is
+    // not where the parent painted the child.
     output.accesskit_update = None;
 
     // The parent counts its own passes.
@@ -56,6 +57,26 @@ pub(crate) fn forward_repaint(ctx: &Context, child_id: ViewportId, parent_id: Vi
     if delay < Duration::MAX {
         ctx.request_repaint_after_for(delay, parent_id);
     }
+}
+
+/// Put the child's widgets into the parent's accessibility tree, under `id`.
+///
+/// Returns what was grafted, so a caller that skips a pass can graft it again: a child that
+/// is not running is still on screen, and a screen reader that loses half a window every
+/// time it stops changing is worse than no screen reader.
+pub(crate) fn forward_accesskit(
+    ctx: &Context,
+    child_id: ViewportId,
+    id: Id,
+    to_parent: Transform,
+    previous: Option<AccessKitSubtree>,
+) -> Option<AccessKitSubtree> {
+    let subtree = ctx.take_accesskit_subtree(child_id).or(previous)?;
+    // A node's bounds are a rectangle, and a rotated or mirrored child does not put its
+    // widgets in rectangles any more. Nothing to do but leave those out of the tree.
+    let placement = to_parent.as_scale_translation()?;
+    ctx.graft_accesskit_subtree(&subtree, id, placement);
+    Some(subtree)
 }
 
 /// When the child next needs a pass of its own, on the parent's input clock.

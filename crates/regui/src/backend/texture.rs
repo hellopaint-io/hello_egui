@@ -234,6 +234,11 @@ fn apply_pending_textures(ui: &Ui, renderer: &mut egui_wgpu::Renderer, render_st
         // A texture can collect several deltas in one pass - a font atlas grows by one
         // patch per new glyph - and they have to be applied in order.
         for image_delta in image_deltas {
+            if !fits(renderer, *texture_id, image_delta) {
+                // Nothing to patch into, so leave the whole texture to the backend and put
+                // up with a stale one for this pass. See `fits`.
+                continue;
+            }
             renderer.update_texture(
                 &render_state.device,
                 &render_state.queue,
@@ -242,6 +247,29 @@ fn apply_pending_textures(ui: &Ui, renderer: &mut egui_wgpu::Renderer, render_st
             );
         }
     }
+}
+
+/// Is this delta safe to apply to the texture the renderer currently holds?
+///
+/// A whole-texture delta always is: it replaces whatever was there. A patch is only safe if
+/// the renderer's texture is already at least as big as the patch expects, and that is not
+/// a given - the renderer is only as up to date as the last time the application painted,
+/// which is every frame under a normal integration but not, say, under a test harness that
+/// runs many passes between renders. Applying a patch past the end of a smaller texture is
+/// a validation error, and wgpu treats those as fatal.
+fn fits(renderer: &egui_wgpu::Renderer, id: TextureId, delta: &egui::epaint::ImageDelta) -> bool {
+    let Some(pos) = delta.pos else {
+        return true;
+    };
+    let Some(texture) = renderer
+        .texture(&id)
+        .and_then(|texture| texture.texture.as_ref())
+    else {
+        return false;
+    };
+    let size = texture.size();
+    pos[0] + delta.image.width() <= size.width as usize
+        && pos[1] + delta.image.height() <= size.height as usize
 }
 
 /// Render the child's primitives into `view` with the parent's own renderer.

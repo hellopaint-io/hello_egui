@@ -147,6 +147,17 @@ impl Transform {
         self.rotation.angle().abs() < EPSILON
     }
 
+    /// This transform as a scale and a translation, when that is all it is.
+    ///
+    /// `None` for a rotated or mirrored transform, which no amount of scaling and shifting
+    /// reproduces. Handy where only rectangles are on offer, such as accessibility bounds.
+    pub fn as_scale_translation(self) -> Option<egui::emath::TSTransform> {
+        (self.is_axis_aligned() && !self.mirror_x).then_some(egui::emath::TSTransform {
+            scaling: self.scale,
+            translation: self.translation,
+        })
+    }
+
     /// Is this transform usable, i.e. finite and not collapsed to nothing?
     pub fn is_valid(self) -> bool {
         self.scale.is_finite()
