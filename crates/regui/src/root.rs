@@ -122,7 +122,14 @@ impl<'a> RootScope<'a> {
             return;
         }
         let moved = self.response(response);
-        self.ui(move |ui| content(ui, &moved));
+        self.ui(move |ui| {
+            // The response came out of the child's viewport, and a popup reads its layer to
+            // decide where it sits in the stack and whether it is a submenu of something.
+            // Out here it belongs to whatever layer the host is drawing on.
+            let mut moved = moved;
+            moved.layer_id = ui.layer_id();
+            content(ui, &moved);
+        });
     }
 }
 
