@@ -5,12 +5,14 @@
 mod backend;
 mod input;
 mod output;
+mod root;
 mod transform;
 mod viewport;
 
 #[cfg(feature = "wgpu")]
 mod wgpu_state;
 
+pub use root::RootScope;
 pub use transform::Transform;
 pub use viewport::{Regui, ReguiOutput};
 

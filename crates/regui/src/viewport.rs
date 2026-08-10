@@ -1,5 +1,5 @@
 use crate::{
-    Transform, backend,
+    RootScope, Transform, backend,
     input::{self, Gate},
     output,
 };
@@ -124,6 +124,25 @@ struct State {
     /// Interaction is decided from the widget rectangles of the previous pass, and a
     /// skipped pass leaves none, so the pass that wakes a child has to prime them first.
     ran_last_pass: bool,
+
+    /// Did the child hand anything out to the ui hosting it last pass?
+    ///
+    /// Such a child cannot be retained: what it queued is drawn by the host, from a pass
+    /// that would not happen, so its menu would come down the moment it sat one out.
+    /// [`State::child_busy`] does not cover this - the menu is not in the child's
+    /// viewport any more, so the child reports no popup open.
+    had_root_ui: bool,
+}
+
+/// Where a running child's coordinates land on the screen, for a child inside a child.
+fn to_root_id(viewport: ViewportId) -> Id {
+    Id::new("regui_to_root").with(viewport)
+}
+
+/// What the child hosting this one has already done to it, if anything.
+fn ancestor_transform(ctx: &egui::Context, parent_id: ViewportId) -> Transform {
+    ctx.data(|data| data.get_temp(to_root_id(parent_id)))
+        .unwrap_or(Transform::IDENTITY)
 }
 
 /// The child's accessibility nodes, kept apart from [`State`] because they are neither
@@ -342,7 +361,19 @@ impl Regui {
     }
 
     /// Run the child ui and paint it.
-    pub fn show<R>(self, ui: &mut Ui, content: impl FnMut(&mut Ui) -> R) -> ReguiOutput<R> {
+    pub fn show<R>(self, ui: &mut Ui, mut content: impl FnMut(&mut Ui) -> R) -> ReguiOutput<R> {
+        self.show_with_root(ui, move |ui, _| content(ui))
+    }
+
+    /// Run the child ui and paint it, with a way out into the ui hosting it.
+    ///
+    /// See [`RootScope`] for what the second argument is for: menus and anything else that
+    /// has no business being clipped to the child or rotated with it.
+    pub fn show_with_root<R>(
+        self,
+        ui: &mut Ui,
+        content: impl FnMut(&mut Ui, &RootScope<'_>) -> R,
+    ) -> ReguiOutput<R> {
         let retained = self.show_impl(ui, content);
         ReguiOutput {
             response: retained.response,
@@ -363,7 +394,20 @@ impl Regui {
     pub fn show_retained<R>(
         self,
         ui: &mut Ui,
-        content: impl FnMut(&mut Ui) -> R,
+        mut content: impl FnMut(&mut Ui) -> R,
+    ) -> ReguiOutput<Option<R>> {
+        self.show_impl(ui, move |ui, _| content(ui))
+    }
+
+    /// [`Self::show_retained`], with a way out into the ui hosting the child.
+    ///
+    /// A child that put anything out there last pass does not reuse its image: what it
+    /// queued is drawn by a pass that did not happen, so retaining a child with a menu
+    /// open would take the menu down. See [`RootScope`].
+    pub fn show_retained_with_root<R>(
+        self,
+        ui: &mut Ui,
+        content: impl FnMut(&mut Ui, &RootScope<'_>) -> R,
     ) -> ReguiOutput<Option<R>> {
         self.show_impl(ui, content)
     }
@@ -371,7 +415,7 @@ impl Regui {
     fn show_impl<R>(
         self,
         ui: &mut Ui,
-        mut content: impl FnMut(&mut Ui) -> R,
+        mut content: impl FnMut(&mut Ui, &RootScope<'_>) -> R,
     ) -> ReguiOutput<Option<R>> {
         let Self {
             id_salt,
@@ -414,7 +458,11 @@ impl Regui {
             // A scale of zero or a NaN rotation would make the inverse transform, and
             // therefore every pointer position we hand the child, garbage.
             log::warn!("regui: skipping a child ui with an unusable transform: {transform:?}");
-            let inner = content(ui);
+            // No child, so nothing to escape from: the content is running in the host
+            // already and whatever it queues can just run there too.
+            let scope = RootScope::new(Transform::IDENTITY);
+            let inner = content(ui, &scope);
+            scope.run(ui);
             return ReguiOutput {
                 response,
                 inner: Some(inner),
@@ -475,9 +523,15 @@ impl Regui {
             };
         }
 
+        // The way out for anything the child would rather not have clipped to itself.
+        // Composed with whatever an enclosing child is already doing, so the geometry is
+        // right at any depth even though the layer only rises by one.
+        let scope = RootScope::new(ancestor_transform(&ctx, parent_id).then(transform));
+        ctx.data_mut(|data| data.insert_temp(to_root_id(viewport_id), scope.transform()));
+
         let (inner, rendered_offscreen) = run_child(
             ui,
-            &mut content,
+            |ui| content(ui, &scope),
             &Pass {
                 id,
                 viewport_id,
@@ -498,7 +552,12 @@ impl Regui {
         // Only an off-screen pass leaves an image behind; without one there is nothing to
         // retain, whatever the caller asked for.
         state.cached_key = retain_key.filter(|_| rendered_offscreen);
+        state.had_root_ui = !scope.is_empty();
         ctx.data_mut(|data| data.insert_temp(id, state));
+
+        // After the pass, so the child's own image is under whatever it put out here, and
+        // after the state is written, so a menu that runs its own regui sees the truth.
+        scope.run(ui);
 
         ReguiOutput {
             response,
@@ -685,6 +744,7 @@ fn may_reuse(
         && !pointer_left
         && !state.child_has_focus
         && !state.child_busy
+        && !state.had_root_ui
         // A child that asked to be woken has something left to draw - an animation, a
         // caret - so let it, and reconsider once it stops asking.
         && state.repaint_at.is_none_or(|at| at > now)

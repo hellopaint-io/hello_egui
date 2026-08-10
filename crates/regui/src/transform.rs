@@ -101,6 +101,27 @@ impl Transform {
         self.rotation * (self.scale * self.mirrored(vec))
     }
 
+    /// This transform followed by `other`.
+    ///
+    /// `a.then(b).mul_pos(p) == b.mul_pos(a.mul_pos(p))`. Composing child-to-parent
+    /// transforms up a chain of nested children is how a point in the innermost one is
+    /// placed on the screen everything is finally drawn on.
+    pub fn then(self, other: Self) -> Self {
+        Self {
+            scale: self.scale * other.scale,
+            // A mirror between the two rotations reverses the sense of the first
+            // (`M·R·M = R⁻¹`), and `other`'s mirror is applied before its rotation.
+            rotation: other.rotation
+                * if other.mirror_x {
+                    self.rotation.inverse()
+                } else {
+                    self.rotation
+                },
+            translation: other.mul_vec(self.translation) + other.translation,
+            mirror_x: self.mirror_x ^ other.mirror_x,
+        }
+    }
+
     /// The transform that undoes this one.
     pub fn inverse(self) -> Self {
         // Undoing a mirrored transform keeps the rotation rather than reversing it:
@@ -231,6 +252,60 @@ mod tests {
         // A half turn keeps lines horizontal, but it flips them, which egui's clip
         // rectangles cannot express either.
         assert!(!Transform::from_rotation(std::f32::consts::PI).is_axis_aligned());
+    }
+
+    #[test]
+    fn then_composes_in_order() {
+        let point = pos2(3.0, 8.0);
+        for first in [
+            Transform::from_scale(2.0),
+            Transform::from_rotation(0.4),
+            Transform::from_translation(vec2(5.0, -2.0)),
+            Transform::from_mirror_x(),
+            Transform {
+                scale: 1.7,
+                rotation: Rot2::from_angle(-0.9),
+                translation: vec2(-3.0, 11.0),
+                mirror_x: true,
+            },
+        ] {
+            for second in [
+                Transform::from_scale(0.5),
+                Transform::from_rotation(-1.2),
+                Transform::from_translation(vec2(-7.0, 4.0)),
+                Transform::from_mirror_x(),
+                Transform {
+                    scale: 0.8,
+                    rotation: Rot2::from_angle(2.1),
+                    translation: vec2(6.0, 6.0),
+                    mirror_x: true,
+                },
+            ] {
+                assert_close(
+                    first.then(second).mul_pos(point),
+                    second.mul_pos(first.mul_pos(point)),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn then_identity_changes_nothing() {
+        let transform = Transform {
+            scale: 1.3,
+            rotation: Rot2::from_angle(0.6),
+            translation: vec2(2.0, 9.0),
+            mirror_x: true,
+        };
+        let point = pos2(-4.0, 5.0);
+        assert_close(
+            transform.then(Transform::IDENTITY).mul_pos(point),
+            transform.mul_pos(point),
+        );
+        assert_close(
+            Transform::IDENTITY.then(transform).mul_pos(point),
+            transform.mul_pos(point),
+        );
     }
 
     #[test]
