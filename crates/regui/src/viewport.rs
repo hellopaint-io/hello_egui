@@ -547,7 +547,21 @@ impl Regui {
             };
         }
 
-        let has_pointer = interactive && pointer.unwrap_or_else(|| input::wants_pointer(&response));
+        // Anything the host draws on top of the child is not the child's to react to - a
+        // menu the child handed out, a modal over the whole app. The parent's `Response`
+        // works this out on its own, but a caller deciding [`Regui::pointer`] for itself
+        // cannot: it knows the shape of its own chrome, not what is covering it. Missing
+        // this is subtle rather than obvious - the child goes on hit-testing underneath an
+        // open menu, so a click on a menu item lands on the menu *and* on whatever the menu
+        // is drawn over.
+        let occluded = ui
+            .input(|input| input.pointer.latest_pos())
+            .is_some_and(|pos| {
+                ctx.layer_id_at(pos)
+                    .is_some_and(|layer| layer != ui.layer_id())
+            });
+        let has_pointer =
+            interactive && !occluded && pointer.unwrap_or_else(|| input::wants_pointer(&response));
         let gate = Gate {
             pointer: has_pointer,
             keyboard: interactive && state.child_has_focus,

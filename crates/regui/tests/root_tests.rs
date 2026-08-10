@@ -372,3 +372,62 @@ fn a_menu_handed_out_of_a_retained_child_opens_when_its_button_is_clicked() {
         "the menu never opened"
     );
 }
+
+#[test]
+fn a_click_on_a_handed_out_menu_does_not_also_hit_the_child_underneath() {
+    // The menu is drawn by the host, so nothing inside the child covers where it is any
+    // more. Without regui noticing that, the child goes on hit-testing under an open menu
+    // and one click lands twice: once on the menu item, once on whatever the menu is over.
+    let state = render_state();
+    let installed = state.clone();
+    let underneath = Rc::new(Cell::new(0u32));
+    let hits = Rc::clone(&underneath);
+
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .renderer(WgpuTestRenderer::from_render_state(state))
+        .build_ui(move |ui| {
+            regui::install_wgpu(ui.ctx(), installed.clone());
+            let hits = Rc::clone(&hits);
+            Regui::new("child")
+                .size(vec2(300.0, 200.0))
+                // What a child laid over something the user is still working on has to do:
+                // it is not the shape of its rect, so it decides for itself when the
+                // pointer is its own. That is also how it loses track of being covered.
+                .sense(egui::Sense::hover())
+                .pointer(true)
+                .show_with_root(ui, move |ui, root| {
+                    let tools = ui.button("Tools");
+                    // Directly below the button, which is where a menu dropping out of it
+                    // lands - so a click on the menu's first item is over this too.
+                    if ui.button("Underneath").clicked() {
+                        hits.set(hits.get() + 1);
+                    }
+                    root.popup(&tools, |_ui, tools| {
+                        egui::Popup::menu(tools).show(|ui| {
+                            let _ = ui.button("Pick me");
+                        });
+                    });
+                });
+        });
+
+    for _ in 0..4 {
+        harness.run();
+    }
+    harness.get(by().role(Role::Button).label("Tools")).click();
+    for _ in 0..4 {
+        harness.run();
+    }
+    harness
+        .get(by().role(Role::Button).label("Pick me"))
+        .click();
+    for _ in 0..4 {
+        harness.run();
+    }
+
+    assert_eq!(
+        underneath.get(),
+        0,
+        "the click went through the menu and hit the child underneath it"
+    );
+}
