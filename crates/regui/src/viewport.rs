@@ -62,6 +62,10 @@ pub struct Regui {
 
     /// Reuse the last image while this key is unchanged. See [`Regui::retain`].
     retain: Option<u64>,
+
+    /// Shrink the child to what it lays out, treating `size` as a maximum. See
+    /// [`Regui::auto_size`].
+    auto_size: bool,
 }
 
 /// What [`Regui::show`] gives you back.
@@ -125,6 +129,12 @@ struct State {
     /// skipped pass leaves none, so the pass that wakes a child has to prime them first.
     ran_last_pass: bool,
 
+    /// What the child measured at, for an auto-sized one. See [`Regui::auto_size`].
+    ///
+    /// `None` until it has run once, which is the only time an auto-sized child is laid out
+    /// at the maximum it was given.
+    measured_size: Option<Vec2>,
+
     /// Did the child hand anything out to the ui hosting it last pass?
     ///
     /// Such a child cannot be retained: what it queued is drawn by the host, from a pass
@@ -137,6 +147,11 @@ struct State {
 /// Where a running child's coordinates land on the screen, for a child inside a child.
 fn to_root_id(viewport: ViewportId) -> Id {
     Id::new("regui_to_root").with(viewport)
+}
+
+/// The popups this child handed to its host that the host still has open.
+fn open_popups_id(viewport: ViewportId) -> Id {
+    Id::new("regui_open_popups").with(viewport)
 }
 
 /// What the child hosting this one has already done to it, if anything.
@@ -174,13 +189,15 @@ impl Regui {
             blur: 0.0,
             offscreen: false,
             retain: None,
+            auto_size: false,
         }
     }
 
     /// How big the child ui thinks its screen is, in the child's own points.
     ///
     /// This is the child's `screen_rect`; the space taken up in the parent is this size
-    /// after the transform. Defaults to 200x200.
+    /// after the transform. Defaults to 200x200. With [`Self::auto_size`] it is a maximum
+    /// rather than the size itself.
     #[inline]
     pub fn size(mut self, size: Vec2) -> Self {
         self.size = size;
@@ -332,6 +349,40 @@ impl Regui {
         self
     }
 
+    /// Shrink the child's screen to what its contents lay out, up to [`Self::size`].
+    ///
+    /// Like an [`egui::Area`], which is as big as what you put in it and no bigger. Without
+    /// this a child is exactly the size you name, and a child that is bigger than its
+    /// contents costs the difference for nothing: its screen is the texture it renders
+    /// into, so a bar of chrome given a whole panel's worth of room pays for the whole
+    /// panel every pass it runs.
+    ///
+    /// The child keeps its origin and shrinks towards it, again like an `Area`: contents
+    /// laid out from the top left end up in the same place, contents laid out against the
+    /// *far* edge of the screen they were given do not, since that edge has moved. Give
+    /// those a [`Self::size`] they are meant to fill, or place them against something other
+    /// than their own screen.
+    ///
+    /// Whatever the child draws in areas of its own — its menus, its tooltips — is measured
+    /// too, so opening one grows the child rather than being clipped by it.
+    ///
+    /// # Cost
+    ///
+    /// An extra layout pass, every pass the child runs. Measuring means laying the contents
+    /// out at the maximum size first, with egui's sizing-pass rules so that widgets which
+    /// would otherwise fill the space report what they actually need; that pass is thrown
+    /// away and the real one runs at the answer. The content function is therefore called
+    /// twice per pass, so it has to be safe to call for its layout alone — the measuring
+    /// pass gets no events, and anything it hands out through [`RootScope`] is dropped.
+    ///
+    /// Pair it with [`Self::retain`], which is what stops that cost being paid on a pass
+    /// where nothing changed.
+    #[inline]
+    pub fn auto_size(mut self, auto_size: bool) -> Self {
+        self.auto_size = auto_size;
+        self
+    }
+
     /// Keep the last image and stop running the child while `content_key` stays the same.
     ///
     /// This is what makes `regui` *re*tained: a child that has not changed, is not under
@@ -442,6 +493,7 @@ impl Regui {
             // draws it is not the one a retained pass would build. Not worth a second
             // code path: a blur is there to be animated.
             retain: retain_key,
+            auto_size,
         } = self;
         let retain_key = retain_key.filter(|_| blur <= 0.0);
         let offscreen = offscreen || blur > 0.0 || retain_key.is_some();
@@ -456,6 +508,23 @@ impl Regui {
         } else {
             Sense::hover()
         });
+
+        let mut state: State = ctx.data_mut(|data| data.get_temp(id)).unwrap_or_default();
+
+        // Space has to be reserved before the child can be measured - measuring means
+        // running it, and a child that turns out to be retained never runs. So an
+        // auto-sized child is laid out at the size it came out at last time, and measured
+        // again only on a pass that was going to run anyway. What that costs is a pass of
+        // lag in the *parent's* geometry, not the child's: the pass that changes size still
+        // renders at the size it measured, it is the rect the parent reserved and hit-tests
+        // against that is a pass behind.
+        let max_size = size;
+        let size = if auto_size {
+            state.measured_size.unwrap_or(max_size)
+        } else {
+            size
+        };
+
         let (transform, response) = match placement {
             Some(placement) => place(ui, id, size, placement, offset, sense),
             None => allocate(ui, size, scale, rotation, mirror_x, offset, sense),
@@ -467,9 +536,9 @@ impl Regui {
             log::warn!("regui: skipping a child ui with an unusable transform: {transform:?}");
             // No child, so nothing to escape from: the content is running in the host
             // already and whatever it queues can just run there too.
-            let scope = RootScope::new(Transform::IDENTITY);
+            let scope = RootScope::new(Transform::IDENTITY, Vec::new());
             let inner = content(ui, &scope);
-            scope.run(ui);
+            drop(scope.run(ui));
             return ReguiOutput {
                 response,
                 inner: Some(inner),
@@ -477,8 +546,6 @@ impl Regui {
                 viewport_id,
             };
         }
-
-        let mut state: State = ctx.data_mut(|data| data.get_temp(id)).unwrap_or_default();
 
         let has_pointer = interactive && pointer.unwrap_or_else(|| input::wants_pointer(&response));
         let gate = Gate {
@@ -500,6 +567,7 @@ impl Regui {
         let texture_pixels_per_point = child_pixels_per_point * ctx.zoom_factor();
 
         let now = ui.input(|input| input.time);
+        let caller_key = retain_key;
         let retain_key =
             retain_key.map(|key| content_key(&ctx, key, size, texture_pixels_per_point));
 
@@ -530,15 +598,41 @@ impl Regui {
             };
         }
 
+        // Now that the child is definitely running, ask how big it wants to be. The answer
+        // is what it renders at this pass, and what the parent will reserve for it next.
+        let size = if auto_size {
+            let measured = measure(
+                ui,
+                &mut content,
+                viewport_id,
+                max_size,
+                child_pixels_per_point,
+            );
+            state.measured_size = Some(measured);
+            measured
+        } else {
+            size
+        };
+        let retain_key =
+            caller_key.map(|key| content_key(&ctx, key, size, texture_pixels_per_point));
+
         // The way out for anything the child would rather not have clipped to itself.
         // Composed with whatever an enclosing child is already doing, so the geometry is
         // right at any depth even though the layer only rises by one.
-        let scope = RootScope::new(ancestor_transform(&ctx, parent_id).then(transform));
+        // Read here, in the host's pass, because that is the viewport the answer is kept
+        // in. See [`RootScope::open`].
+        let open_popups: Vec<Id> = ctx
+            .data(|data| data.get_temp(open_popups_id(viewport_id)))
+            .unwrap_or_default();
+        let scope = RootScope::new(
+            ancestor_transform(&ctx, parent_id).then(transform),
+            open_popups,
+        );
         ctx.data_mut(|data| data.insert_temp(to_root_id(viewport_id), scope.transform()));
 
         let (inner, rendered_offscreen) = run_child(
             ui,
-            |ui| content(ui, &scope),
+            |ui| in_scope(ui, auto_size, |ui| content(ui, &scope)),
             &Pass {
                 id,
                 viewport_id,
@@ -564,7 +658,8 @@ impl Regui {
 
         // After the pass, so the child's own image is under whatever it put out here, and
         // after the state is written, so a menu that runs its own regui sees the truth.
-        scope.run(ui);
+        let open_popups = scope.run(ui);
+        ctx.data_mut(|data| data.insert_temp(open_popups_id(viewport_id), open_popups));
 
         ReguiOutput {
             response,
@@ -573,6 +668,82 @@ impl Regui {
             viewport_id,
         }
     }
+}
+
+/// Run the content at the same ui depth whether this is the pass that counts or the one
+/// that measures it.
+///
+/// Only for an auto-sized child, which is the only one that gets measured. A nesting level
+/// that appeared in one pass and not the other would move every widget id inside it, and
+/// the two passes would be talking about different widgets.
+fn in_scope<R>(ui: &mut Ui, wrap: bool, content: impl FnOnce(&mut Ui) -> R) -> R {
+    if wrap {
+        ui.scope_builder(egui::UiBuilder::new(), content).inner
+    } else {
+        content(ui)
+    }
+}
+
+/// Lay the child out at the biggest it may be, and see how much of that it wants.
+///
+/// A sizing pass in egui's sense: a widget that would otherwise fill whatever it is given
+/// reports what it needs instead, so the answer is the child's own size rather than an echo
+/// of the size the question was asked with. The pass is thrown away afterwards — it exists
+/// to be measured, not seen — but it is a real pass of the content, so it is given no
+/// events to act on and nothing it hands out is kept.
+fn measure<'a, R>(
+    ui: &mut Ui,
+    content: &mut impl FnMut(&mut Ui, &RootScope<'a>) -> R,
+    viewport_id: ViewportId,
+    max: Vec2,
+    pixels_per_point: f32,
+) -> Vec2 {
+    let ctx = ui.ctx().clone();
+    let input = input::priming_input(input::child_input(
+        ui,
+        &input::ChildInput {
+            viewport_id,
+            size: max,
+            pixels_per_point,
+            // Nothing positional survives `priming_input` with the pointer gated off, so
+            // there is nothing for this to map and the real transform is not needed.
+            to_child: Transform::IDENTITY,
+            gate: Gate {
+                pointer: false,
+                keyboard: false,
+            },
+            pointer_gone: false,
+            resync_modifiers: None,
+        },
+    ));
+
+    let (output, wanted) = ctx.run_hosted_viewport(viewport_id, input, |ui| {
+        let laid_out = ui
+            .scope_builder(egui::UiBuilder::new().sizing_pass(), |ui| {
+                // Anything handed out from a pass nobody sees is not wanted, and dropping
+                // the scope with it still queued is how it is refused.
+                let scope = RootScope::new(Transform::IDENTITY, Vec::new());
+                drop(content(ui, &scope));
+            })
+            .response
+            .rect;
+        // A menu or a tooltip is an area of its own, so what the contents laid out says
+        // nothing about it — and it is inside the child, so it has to fit too.
+        ui.ctx().memory(|memory| {
+            memory
+                .areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|layer| layer.order != egui::Order::Background)
+                .filter_map(|layer| memory.area_rect(layer.id))
+                .fold(laid_out, |acc, area| acc.union(area))
+        })
+    });
+    output.drop_without_applying_deltas();
+
+    // From the child's origin, since that is the corner it keeps: `max` of the far corner,
+    // not the size of a rect that might not start at zero.
+    wanted.max.to_vec2().max(Vec2::ZERO).min(max)
 }
 
 /// Everything one pass of a child needs that the builder does not decide on its own.

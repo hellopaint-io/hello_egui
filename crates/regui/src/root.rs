@@ -12,7 +12,7 @@
 
 use std::cell::RefCell;
 
-use egui::{Rect, Response, Ui};
+use egui::{Id, Rect, Response, Ui};
 
 use crate::Transform;
 
@@ -35,13 +35,27 @@ pub struct RootScope<'a> {
 
     /// Queued in the order it was asked for, and run in that order.
     deferred: RefCell<Vec<Box<dyn FnOnce(&mut Ui) + 'a>>>,
+
+    /// Popups that were still open in the host at the end of the previous pass.
+    ///
+    /// The child cannot ask egui this. Which popup is open is tracked per viewport, and a
+    /// popup handed out here belongs to the host's - so a child asking whether its own menu
+    /// is open is asking the wrong viewport and always hears no. Worse than useless: the
+    /// menu would then not be handed out again, and egui reaps a popup that no pass drew as
+    /// abandoned, so it would shut itself the frame after it opened.
+    open: Vec<Id>,
+
+    /// The popups handed out this pass, to be checked against the host once they have run.
+    handed_out: RefCell<Vec<Id>>,
 }
 
 impl<'a> RootScope<'a> {
-    pub(crate) fn new(to_root: Transform) -> Self {
+    pub(crate) fn new(to_root: Transform, open: Vec<Id>) -> Self {
         Self {
             to_root,
             deferred: RefCell::new(Vec::new()),
+            open,
+            handed_out: RefCell::new(Vec::new()),
         }
     }
 
@@ -50,11 +64,18 @@ impl<'a> RootScope<'a> {
         self.deferred.borrow().is_empty()
     }
 
-    /// Run what was queued, against the host's ui.
-    pub(crate) fn run(self, ui: &mut Ui) {
+    /// Run what was queued against the host's ui, and report which of the popups among it
+    /// are still open now that they have had their say.
+    pub(crate) fn run(self, ui: &mut Ui) -> Vec<Id> {
         for deferred in self.deferred.into_inner() {
             deferred(ui);
         }
+        let ctx = ui.ctx();
+        self.handed_out
+            .into_inner()
+            .into_iter()
+            .filter(|id| egui::Popup::is_id_open(ctx, *id))
+            .collect()
     }
 
     /// How this child's coordinates map to the ui hosting it.
@@ -113,14 +134,17 @@ impl<'a> RootScope<'a> {
     /// decides for itself whether to draw - would keep its child awake forever for a menu
     /// nobody had opened.
     ///
-    /// Open is read from egui's memory, so this fits any popup that tracks itself there:
+    /// Open is read from egui's memory *in the host*, so this fits any popup that tracks
+    /// itself there:
     /// [`egui::Popup::menu`], [`egui::Popup::context_menu`], anything built on
     /// [`egui::Popup::from_toggle_button_response`]. A popup that keeps its own open flag
     /// has to gate itself and go through [`Self::ui`].
     pub fn popup(&self, response: &Response, content: impl FnOnce(&mut Ui, &Response) + 'a) {
-        if !popup_wanted(response) {
+        let popup_id = egui::Popup::default_response_id(response);
+        if !self.open.contains(&popup_id) && !opening_click(response) {
             return;
         }
+        self.handed_out.borrow_mut().push(popup_id);
         let moved = self.response(response);
         self.ui(move |ui| {
             // The response came out of the child's viewport, and a popup reads its layer to
@@ -133,13 +157,10 @@ impl<'a> RootScope<'a> {
     }
 }
 
-/// Is there a popup on this response to draw, or about to be one?
+/// Did this response just ask for a popup?
 ///
-/// The click is not redundant with the memory: the pass that opens a popup is the pass the
-/// click arrives on, and the toggle that records it happens inside the popup - which has
-/// not run yet.
-fn popup_wanted(response: &Response) -> bool {
-    response.clicked()
-        || response.secondary_clicked()
-        || egui::Popup::is_id_open(&response.ctx, egui::Popup::default_response_id(response))
+/// The other half of the question - is one already open - is [`RootScope::open`], because
+/// the answer lives in the host's viewport and this runs in the child's.
+fn opening_click(response: &Response) -> bool {
+    response.clicked() || response.secondary_clicked()
 }

@@ -5,7 +5,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use egui::accesskit::Role;
 use egui::{Color32, Pos2, Rect, Vec2, vec2};
+use egui_kittest::kittest::{Queryable as _, by};
 use egui_kittest::{
     Harness,
     wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup},
@@ -292,12 +294,9 @@ fn an_escaped_popup_is_not_clipped_to_the_child() {
             let output = Regui::new("child")
                 .size(CHILD)
                 .show_with_root(ui, |ui, root| {
-                    let response = ui.allocate_response(vec2(40.0, 20.0), egui::Sense::click());
+                    let response = ui.button("Open");
                     let child_rect = response.rect;
                     let reported = Rc::clone(&reported);
-                    // `popup` draws nothing while the popup is shut, and nothing here is
-                    // going to click the button.
-                    egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&response));
                     root.popup(&response, move |ui, response| {
                         // The response has to be talking about the host's coordinates, or
                         // a menu built on it lands wherever the child's rect points.
@@ -307,6 +306,10 @@ fn an_escaped_popup_is_not_clipped_to_the_child() {
                 });
             PLACED.with(|placed| placed.set(output.response.rect));
         });
+    // Clicked rather than forced open: which popup is open is per-viewport, so opening one
+    // from inside the child opens it somewhere nobody is looking.
+    harness.run();
+    harness.get(by().role(Role::Button).label("Open")).click();
     harness.run();
 
     let (child_rect, host_rect) = seen.get().expect("the popup closure never ran");
@@ -326,5 +329,46 @@ fn an_escaped_popup_is_not_clipped_to_the_child() {
         placed.contains_rect(host_rect),
         "expected the moved response inside where the child was placed ({placed:?}), \
          got {host_rect:?}"
+    );
+}
+
+#[test]
+fn a_menu_handed_out_of_a_retained_child_opens_when_its_button_is_clicked() {
+    // The whole point, end to end: a button inside a retained child, its menu drawn by the
+    // host, and a click that has to travel into the child, come back out as a queued
+    // closure, and land as an open menu in the host's tree.
+    let state = render_state();
+    let installed = state.clone();
+
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .renderer(WgpuTestRenderer::from_render_state(state))
+        .build_ui(move |ui| {
+            regui::install_wgpu(ui.ctx(), installed.clone());
+            Regui::new("child")
+                .size(CHILD)
+                .retain(1)
+                .show_retained_with_root(ui, |ui, root| {
+                    let tools = ui.button("Tools");
+                    root.popup(&tools, |_ui, tools| {
+                        egui::Popup::menu(tools).show(|ui| {
+                            let _ = ui.button("Select");
+                        });
+                    });
+                });
+        });
+
+    for _ in 0..4 {
+        harness.run();
+    }
+    harness.get(by().role(Role::Button).label("Tools")).click();
+    for _ in 0..4 {
+        harness.run();
+    }
+    assert!(
+        harness
+            .query(by().role(Role::Button).label("Select"))
+            .is_some(),
+        "the menu never opened"
     );
 }
