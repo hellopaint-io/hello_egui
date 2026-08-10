@@ -3,7 +3,9 @@ use crate::{
     input::{self, Gate},
     output,
 };
-use egui::{AsId, FullOutput, Id, Pos2, Rect, Response, Sense, Ui, Vec2, ViewportId, emath::Rot2};
+use egui::{
+    AsId, Event, FullOutput, Id, Pos2, Rect, Response, Sense, Ui, Vec2, ViewportId, emath::Rot2,
+};
 
 /// Run a part of your ui in its own egui viewport, and paint the result into this ui.
 ///
@@ -446,8 +448,19 @@ impl Regui {
         let retain_key =
             retain_key.map(|key| content_key(&ctx, key, size, texture_pixels_per_point));
 
+        // An accessibility action addresses a widget, and a child that does not run this
+        // pass has no widgets to address - the action would be forwarded into a pass that
+        // never happens. Rare enough that running every child on one costs nothing.
+        let accesskit_action = ui.input(|input| {
+            input
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::AccessKitActionRequest(_)))
+        });
+
         let reused = retain_key.is_some_and(|key| {
-            may_reuse(&state, key, has_pointer, pointer_left, now)
+            !accesskit_action
+                && may_reuse(&state, key, has_pointer, pointer_left, now)
                 && reuse(ui, id, size, texture_pixels_per_point, transform)
         });
         if reused {

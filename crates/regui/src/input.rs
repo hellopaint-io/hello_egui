@@ -185,8 +185,17 @@ fn remap_event(event: &Event, to_child: Transform, gate: Gate) -> Option<Event> 
         // in particular are not keyboard input - they decide what a ctrl-click means.
         Event::WindowFocused(_) | Event::ModifiersChanged(_) => Some(event.clone()),
 
-        // Accessibility and screenshots address a specific widget or viewport, so they
-        // are never ours to forward.
+        // The child's widgets sit in the parent's accessibility tree - that is what
+        // grafting the subtree is for - so whatever drives that tree addresses them
+        // through the parent, and a request for a node the child owns arrives here.
+        // Dropping it leaves every action on the child's widgets silently doing nothing:
+        // a screen reader cannot press its buttons, and `scroll_to_me` on a row of a
+        // scrolling menu leaves the row where it was. Gated on nothing, since an action
+        // is neither pointer nor keyboard input, and one for a node the child does not
+        // own is harmless - it matches no widget there and is ignored.
+        Event::AccessKitActionRequest(_) => Some(event.clone()),
+
+        // Screenshots address a specific viewport, so they are never ours to forward.
         _ => None,
     }
 }
