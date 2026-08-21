@@ -76,7 +76,13 @@ impl Collapse {
 
         content(&mut child);
 
-        let size = child.min_size().min(ui.available_size());
+        // Width clamps to what's available; the height deliberately does not.
+        // Last in a scroll area whose content already overflows, the available
+        // height is spent, and clamping the measured height to it stores zero
+        // — from which `last_size * x` can never grow, so the collapse never
+        // opens again.
+        let content_size = child.min_size();
+        let size = Vec2::new(content_size.x.min(ui.available_size().x), content_size.y);
 
         ui.memory_mut(|mem| {
             mem.data.insert_temp(id, size.y);

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fix `Collapse` staying shut when it is last in a scroll area whose content
+  already overflows
+
 ## 0.13.0
 
 - Update egui to 0.36
