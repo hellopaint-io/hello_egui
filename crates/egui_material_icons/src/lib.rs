@@ -97,6 +97,25 @@ impl MaterialIcon {
         }
     }
 
+    /// Creates an icon that prefers the outlined style: outlined when the
+    /// `outline` feature is enabled, otherwise the only font there is.
+    ///
+    /// Used for legacy names like `ICON_DELETE_OUTLINE`, which share their
+    /// codepoint with the filled name and differ only in font.
+    pub const fn new_outlined(codepoint: &'static str) -> Self {
+        #[cfg(feature = "outline")]
+        {
+            Self {
+                codepoint,
+                style: IconStyle::Outlined,
+            }
+        }
+        #[cfg(not(feature = "outline"))]
+        {
+            Self::new(codepoint)
+        }
+    }
+
     /// Returns this icon with the outlined style.
     #[cfg(feature = "outline")]
     pub const fn outlined(self) -> Self {
