@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use egui::style::ScrollAnimation;
 use egui::{Align, Pos2, Rect, Ui, UiBuilder, Vec2};
-use web_time::{Duration, SystemTime};
+use web_time::Duration;
 
 /// The response from a call to [`VirtualList::ui_custom_layout`]
 pub struct VirtualListResponse {
@@ -55,7 +55,10 @@ pub struct VirtualList {
     hide_on_resize: Option<Duration>,
     /// Stores the index and visibility percentage of the last item that was at the top of the list
     last_top_most_item: Option<(usize, f32)>,
-    last_resize: SystemTime,
+    /// egui time of the last width change. `None` until the list is resized: a
+    /// list that was just created has nothing to flicker from, and hiding it
+    /// disables its widgets, so a click on its first frames would be dropped.
+    last_resize: Option<f64>,
 }
 
 impl Default for VirtualList {
@@ -81,7 +84,7 @@ impl VirtualList {
             scroll_position_sync_on_resize: true,
             hide_on_resize: Some(Duration::from_millis(100)),
             last_top_most_item: None,
-            last_resize: SystemTime::now(),
+            last_resize: None,
         }
     }
 
@@ -137,7 +140,7 @@ impl VirtualList {
                     if self.check_for_resize {
                         self.last_known_row_index = None;
                         self.rows.clear();
-                        self.last_resize = SystemTime::now();
+                        self.last_resize = Some(ui.input(|i| i.time));
                         if self.scroll_position_sync_on_resize {
                             scroll_to_item_index_visibility = self.last_top_most_item;
                         }
@@ -148,8 +151,10 @@ impl VirtualList {
             }
         }
 
-        if let Some(hide_on_resize) = self.hide_on_resize {
-            if self.last_resize.elapsed().unwrap_or_default() < hide_on_resize {
+        // egui time rather than the wall clock, so the window is measured in the same
+        // frames everything else animates on.
+        if let (Some(hide_on_resize), Some(last_resize)) = (self.hide_on_resize, self.last_resize) {
+            if ui.input(|i| i.time) - last_resize < hide_on_resize.as_secs_f64() {
                 ui.set_invisible();
                 ui.ctx().request_repaint();
             }
@@ -325,7 +330,10 @@ impl VirtualList {
         let item_range = first_visible_item_index.unwrap_or(item_start_index)..current_item_index;
 
         // If we scrolled this frame, don't store the last top most item
-        if !did_scroll && self.last_resize.elapsed().unwrap_or_default() > Duration::from_secs(1) {
+        let settled_since_resize = self
+            .last_resize
+            .is_none_or(|last_resize| ui.input(|i| i.time) - last_resize > 1.0);
+        if !did_scroll && settled_since_resize {
             if let Some((first_visible_item_index, first_visible_item_visibility)) =
                 first_visible_item_index.zip(first_visible_item_visibility)
             {

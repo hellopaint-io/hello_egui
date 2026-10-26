@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A new list is no longer hidden for its first 100ms, which disabled its widgets and dropped clicks; `hide_on_resize` now counts egui time instead of the wall clock
+
 ## 0.12.0
 
 - Add release-plz to automate releases ([#105](https://github.com/lucasmerlin/hello_egui/pull/105))
