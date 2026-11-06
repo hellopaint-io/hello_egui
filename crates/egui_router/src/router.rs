@@ -464,19 +464,15 @@ impl<State: 'static, H: History + Default> EguiRouter<State, H> {
     /// Apply what the swipe-back gesture asked for this frame.
     fn apply_swipe_event(&mut self, event: Option<SwipeBackEvent>) {
         match event {
-            Some(SwipeBackEvent::Begin) => {
-                if self.current_transition.is_none() {
-                    let mut transition = CurrentTransition {
-                        active_transition: ActiveTransition::manual(
-                            self.backward_transition.clone(),
-                        )
+            Some(SwipeBackEvent::Begin) if self.current_transition.is_none() => {
+                let mut transition = CurrentTransition {
+                    active_transition: ActiveTransition::manual(self.backward_transition.clone())
                         .with_default_duration(self.default_duration),
-                        leaving_route: None,
-                    };
-                    // Initialize progress to 1.0 (fully showing current page)
-                    transition.active_transition.set_progress(1.0);
-                    self.current_transition = Some(transition);
-                }
+                    leaving_route: None,
+                };
+                // Initialize progress to 1.0 (fully showing current page)
+                transition.active_transition.set_progress(1.0);
+                self.current_transition = Some(transition);
             }
             Some(SwipeBackEvent::Progress(progress)) => {
                 if let Some(transition) = &mut self.current_transition {
@@ -514,7 +510,7 @@ impl<State: 'static, H: History + Default> EguiRouter<State, H> {
                 // Actually perform the back navigation
                 self.history_kind.back().ok();
             }
-            None => {}
+            Some(SwipeBackEvent::Begin) | None => {}
         }
     }
 }

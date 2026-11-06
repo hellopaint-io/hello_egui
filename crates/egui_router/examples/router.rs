@@ -17,32 +17,6 @@ enum RouterMessage {
 
 #[tokio::main]
 async fn main() -> eframe::Result<()> {
-    // This example supports hot reloading via dioxus subsecond. To make it work, call
-    // `dx serve --example router -p egui_router --features async,subsecond --hot-patch`
-    // with an up-to-date version of dioxus cli.
-    #[cfg(feature = "subsecond")]
-    dioxus_devtools::connect_subsecond();
-
-    let mut router: RouterType = None;
-    let mut window_router: RouterType = None;
-
-    eframe::run_ui_native(
-        "Router Example",
-        NativeOptions::default(),
-        move |ui, _frame| {
-            #[cfg(not(feature = "subsecond"))]
-            app(ui, &mut router, &mut window_router);
-            #[cfg(feature = "subsecond")]
-            subsecond::call(|| {
-                app(ui, &mut router, &mut window_router);
-            });
-        },
-    )
-}
-
-type RouterType = Option<(EguiRouter<AppState>, AppState)>;
-
-fn app(ui: &mut Ui, router: &mut RouterType, window_router: &mut RouterType) {
     let init = |ctx: &Context| {
         let mut app_state = AppState {
             message: "Hello, World!".to_string(),
@@ -62,8 +36,8 @@ fn app(ui: &mut Ui, router: &mut RouterType, window_router: &mut RouterType) {
         (router.build(&mut app_state), app_state)
     };
 
-    let mut router = router.get_or_insert_with(|| init(ui));
-    let mut window_router = window_router.get_or_insert_with(|| init(ui));
+    let mut router: Option<(EguiRouter<AppState>, AppState)> = None;
+    let mut window_router: Option<(EguiRouter<AppState>, AppState)> = None;
 
     eframe::run_ui_native(
         "Router Example",
@@ -90,19 +64,16 @@ fn app(ui: &mut Ui, router: &mut RouterType, window_router: &mut RouterType) {
             CentralPanel::default().show(ui, |ui| {
                 router.0.ui(ui, &mut router.1);
             });
-    }
 
-    CentralPanel::default().show_inside(ui, |ui| {
-        router.0.ui(ui, &mut router.1);
-    });
-
-    Window::new("Router Window")
-        .frame(Frame::window(ui.style()).inner_margin(0.0))
-        .show(ui.ctx(), |ui| {
-            ui.set_width(ui.available_width());
-            ui.set_height(ui.available_height());
-            window_router.0.ui(ui, &mut window_router.1);
-        });
+            Window::new("Router Window")
+                .frame(Frame::window(ui.style()).inner_margin(0.0))
+                .show(ui.ctx(), |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.set_height(ui.available_height());
+                    window_router.0.ui(ui, &mut window_router.1);
+                });
+        },
+    )
 }
 
 fn home() -> impl Route<AppState> {

@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.14.0
 
-- Fix `Collapse` staying shut when it is last in a scroll area whose content
-  already overflows
+- Fix animations broken in scroll areas ([#110](https://github.com/lucasmerlin/hello_egui/pull/110))
+- Update egui to 0.37 ([#108](https://github.com/lucasmerlin/hello_egui/pull/108))
 
 ## 0.13.0
 

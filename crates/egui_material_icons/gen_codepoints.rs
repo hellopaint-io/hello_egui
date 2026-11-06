@@ -34,16 +34,18 @@ pub fn main() {
             if !names.insert(name.clone()) {
                 return None;
             }
-            // `ICON_DELETE_OUTLINE` has `ICON_DELETE`'s codepoint, so a plain
-            // `new` would draw the filled glyph under an outline name.
+            // `ICON_DELETE_OUTLINE` would be `ICON_DELETE` under a name that
+            // promises an outline. Skip it; use `ICON_DELETE.outlined()`.
             let outline_alias = OUTLINE_SUFFIXES.iter().any(|suffix| {
                 name.strip_suffix(suffix)
                     .and_then(|base| by_name.get(base))
                     .is_some_and(|base_addr| base_addr == addr)
             });
-            let constructor = if outline_alias { "new_outlined" } else { "new" };
+            if outline_alias {
+                return None;
+            }
             Some(format!(
-                "pub const ICON_{name}: crate::MaterialIcon = crate::MaterialIcon::{constructor}(\"\\u{{{addr}}}\");\n"
+                "pub const ICON_{name}: crate::MaterialIcon = crate::MaterialIcon::new(\"\\u{{{addr}}}\");\n"
             ))
         })
         .collect();

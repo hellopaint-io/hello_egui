@@ -42,7 +42,7 @@ impl Default for SwipeBackConfig {
         Self {
             edge_width: 40.0,
             threshold: 0.4,
-            id: Id::new("router_swipe_back_gesture"),
+            id: Id::unique("router_swipe_back_gesture"),
         }
     }
 }
