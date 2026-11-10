@@ -232,6 +232,21 @@ impl ActiveTransition {
         self.backward
     }
 
+    /// The progress [`ActiveTransition::show`] gives the page being navigated
+    /// to this frame, from 0 to 1 in both directions: eased, or as set while a
+    /// [`manual`](ActiveTransition::manual) transition is driven by hand.
+    ///
+    /// Use it to animate something in step with the pages, like an element
+    /// that flies from one page to the other.
+    pub fn eased_progress(&self) -> f32 {
+        let t = self.progress.min(1.0);
+        if self.manual_control {
+            t
+        } else {
+            (self.easing)(t)
+        }
+    }
+
     /// Set the progress directly. Used to drive a
     /// [`manual`](ActiveTransition::manual) transition from a gesture.
     pub fn set_progress(&mut self, progress: f32) {
@@ -347,4 +362,29 @@ fn with_temp_auto_id(ui: &mut Ui, id: usize, content: impl FnOnce(&mut Ui)) {
     ui.skip_ahead_auto_ids(id);
     content(ui);
     ui.skip_ahead_auto_ids(usize::MAX - (id));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eased_progress_matches_what_show_gives_the_incoming_page() {
+        let config = TransitionConfig::default();
+
+        for mut transition in [
+            ActiveTransition::forward(config.clone()),
+            ActiveTransition::backward(config.clone()),
+        ] {
+            transition.set_progress(0.25);
+            let eased = transition.eased_progress();
+            assert!((eased - egui::emath::ease_in_ease_out(0.25)).abs() < 1e-6);
+            assert!(eased < 0.25, "ease-in-out starts slow");
+        }
+
+        // A gesture drives the pages linearly, so the progress is passed on as is.
+        let mut manual = ActiveTransition::manual(config);
+        manual.set_progress(0.25);
+        assert!((manual.eased_progress() - 0.25).abs() < 1e-6);
+    }
 }
