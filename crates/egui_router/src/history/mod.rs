@@ -1,6 +1,8 @@
 #[cfg(target_arch = "wasm32")]
 mod browser;
 mod memory;
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+mod url;
 
 use crate::history;
 #[cfg(target_arch = "wasm32")]

@@ -1,3 +1,4 @@
+use crate::history::url::{route_from_location, url_for_route};
 use crate::history::{History, HistoryEvent, HistoryResult};
 use egui_inbox::UiInbox;
 use js_sys::Number;
@@ -43,15 +44,8 @@ impl BrowserHistory {
         let base_href_clone = base_href.clone();
         let cb = Closure::wrap(Box::new(move |event: web_sys::PopStateEvent| {
             let state = event.state().as_f64().map(|n| n as u32);
-            let location = web_sys::window().unwrap().location();
-            let path = format!(
-                "{}{}{}",
-                location.pathname().unwrap(),
-                location.search().unwrap(),
-                location.hash().unwrap()
-            );
             tx.send(HistoryEvent {
-                location: path.trim_start_matches(&base_href_clone).to_string(),
+                location: current_route(&base_href_clone),
                 state,
             })
             .ok();
@@ -84,18 +78,7 @@ impl History for BrowserHistory {
     }
 
     fn active_route(&self) -> Option<(String, Option<u32>)> {
-        let location = window().unwrap().location();
-        let full_path = format!(
-            "{}{}{}",
-            location.pathname().unwrap(),
-            location.search().unwrap(),
-            location.hash().unwrap(),
-        );
-        let path = if self.base_href.starts_with(&full_path) {
-            "/".to_string()
-        } else {
-            full_path.trim_start_matches(&self.base_href).to_string()
-        };
+        let path = current_route(&self.base_href);
         let state = self
             .history
             .state()
@@ -110,7 +93,7 @@ impl History for BrowserHistory {
         self.history.push_state_with_url(
             &Number::from(state),
             "",
-            Some(&format!("{}{}", self.base_href, url)),
+            Some(&url_for_route(&self.base_href, &current_search(), url)),
         )?;
         Ok(())
     }
@@ -119,7 +102,7 @@ impl History for BrowserHistory {
         self.history.replace_state_with_url(
             &Number::from(state),
             "",
-            Some(&format!("{}{}", self.base_href, url)),
+            Some(&url_for_route(&self.base_href, &current_search(), url)),
         )?;
         Ok(())
     }
@@ -133,4 +116,18 @@ impl History for BrowserHistory {
         self.history.forward()?;
         Ok(())
     }
+}
+
+fn current_route(base_href: &str) -> String {
+    let location = window().unwrap().location();
+    route_from_location(
+        base_href,
+        &location.pathname().unwrap(),
+        &location.search().unwrap(),
+        &location.hash().unwrap(),
+    )
+}
+
+fn current_search() -> String {
+    window().unwrap().location().search().unwrap()
 }
